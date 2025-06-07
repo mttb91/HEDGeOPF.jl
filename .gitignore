@@ -1,0 +1,22 @@
+*.jl.*.cov
+*.jl.cov
+*.jl.mem
+
+/Manifest*.toml
+/docs/Manifest*.toml
+/docs/build/
+/docs/site/
+
+# Ignore generated test data
+/test/data/datasets/
+
+# Binary dependencies (if applicable)
+deps/deps.jl
+deps/build.log
+deps/downloads/
+deps/usr/
+deps/src/
+
+.DS_Store
+.vscode/
+*.code-workspace

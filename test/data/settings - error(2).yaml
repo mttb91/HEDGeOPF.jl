@@ -1,0 +1,37 @@
+
+CASE:
+    name        : "test"                        # ::String - Name of the folder in which the dataset is saved
+    grid        : "pglib_opf_case5_pjm.m"       # ::String - Full name of the power system grid file
+    uid         : true                          # ::Bool - Whether to generate a unique identifier for each AC-OPF instance
+    append      : false                         # ::Bool - Whether to append new results to an existing dataset
+    baseseed    : 0                             # ::Int64 - Random number generator seed to control reproducibility
+    num_samples : 1000                          # ::Int64 - Total number of AC-OPF samples to generate
+    num_batches : 2                             # ::Int64 - Number of batches in which the total samples are processed
+    num_items   : 3                             # ::Int64 - Number of load samples generated for a single total load active power level
+
+SAMPLING:
+    delta_pd    : 100.0                         # ::Float64 - Percentage variation in load active power around the nominal values
+    delta_qd    : 100.0                         # ::Float64 - Percentage variation in load reactive power around the nominal values
+    delta_pf    : 0.05                          # ::Float64 - Maximum reduction in power factor w.r.t. the nominal absolute value
+    max_pf      : 0.99                          # ::Float64 - Maximum allowable load power factor
+
+PARALLEL:
+    cpu_ratio : 50.0                            # ::Float64 - Percentage of CPU threads to use w.r.t. `Sys.CPU_THREADS` count
+
+MODEL:
+    duals : false                               # ::Bool - Whether to record dual values for every primal AC-OPF variable
+    voll  : 3000.0                              # ::Float64 - Value of Lost Load
+
+PATH:
+    input  : "grids"                            # ::String - Relative path to the folder containing the grid
+    output : "datasets"                         # ::String - Relative path to the folder where the AC-OPF dataset is saved
+
+SOLVER:
+    lp          : "HiGHS"                       # ::String - Julia package for linear programming solver
+    lp_options  :
+        solver            : "ipm"  
+    nlp         : "Ipopt"                       # ::String - Julia package for nonlinear programming solver
+    nlp_options :
+        max_cpu_time      : 1000.0
+        mumps_mem_percent : 10
+        print_level       : 0
