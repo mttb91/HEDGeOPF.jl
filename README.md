@@ -2,7 +2,7 @@
 
 [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://mttb91.github.io/HEDGeOPF.jl/stable/)
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://mttb91.github.io/HEDGeOPF.jl/dev/)
-[![Build Status](https://github.com/mttb91/HEDGeOPF.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/mttb91/HEDGeOPF.jl/actions/workflows/ci.yml?query=branch%3Amain)
+[![Build Status](https://github.com/mttb91/HEDGeOPF.jl/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mttb91/HEDGeOPF.jl/actions/workflows/ci.yml?query=branch%3Amain)
 [![Coverage](https://codecov.io/gh/mttb91/HEDGeOPF.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/mttb91/HEDGeOPF.jl)
 
 HEDGeOPF.jl is a Julia package for generating high-quality, synthetic datasets of AC Optimal Power Flow (AC-OPF) instances, designed to support standardization in training and testing of Neural Networks (NNs) that approximate this problem.
