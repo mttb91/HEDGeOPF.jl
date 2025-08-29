@@ -26,5 +26,5 @@ using HEDGeOPF
 import HiGHS, Ipopt
 
 path = "/path/of/your/choosing"
-generate_dataset(cd(path); filename = "settings.yaml")
+generate_dataset(path; filename = "settings.yaml")
 ```
