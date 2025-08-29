@@ -6,7 +6,7 @@ CurrentModule = HEDGeOPF
 
 ## Overview
 
-[HEDGeOPF.jl](https://github.com/mttb91/HEDGeOPF.jl) is a Julia package to generate datasets of AC Optimal Power Flow (AC-OPF) instances for standardized training and testing of Neural Networks (NNs) that learn to approximate this problem. It implements a methodology that delivers high-quality datasets without compromising on efficiency and scalability. Please refer to our [publication](https://ieeexplore.ieee.org/abstract/document/10761586) for details on the methodology, altough this has further evolved in the code with respect to the paper. An extended version will be made available soon.
+[HEDGeOPF.jl](https://github.com/mttb91/HEDGeOPF.jl) is a Julia package to generate datasets of AC Optimal Power Flow (AC-OPF) instances for standardized training and testing of Neural Networks (NNs) that learn to approximate this problem. It implements a methodology that delivers high-quality datasets without compromising on efficiency and scalability. Please refer to our [publication](https://arxiv.org/abs/2508.19083) for details on the methodology.
 
 ## Installation
 

@@ -27,7 +27,19 @@ This work has been partly financed by the Research Fund for the Italian Electric
 
 ## Citing HEDGeOPF
 
-If you find HEDGeOPF useful in your work, we kindly request that you cite the following [publication](https://ieeexplore.ieee.org/abstract/document/10761586):
+If you find HEDGeOPF useful in your work, we kindly request that you cite the following [preprint](https://arxiv.org/abs/2508.19083), which extends and supersedes our earlier [publication](https://ieeexplore.ieee.org/abstract/document/10761586). The new preprint includes a thorough comparison with other open-source AC-OPF dataset generation methods based on newly proposed quality metrics, alongside a detailed explanation of the methodology.
+
+```bibtex
+@misc{hedgeopf2025,
+  author={Matteo Baù and Luca Perbellini and Samuele Grillo},
+  title={A Principled Framework to Evaluate Quality of AC-OPF Datasets for Machine Learning: Benchmarking a Novel, Scalable Generation Method},
+  year={2025},
+  eprint={2508.19083},
+  archivePrefix={arXiv},
+  primaryClass={eess.SY},
+  url={https://arxiv.org/abs/2508.19083}, 
+}
+```
 
 ```bibtex
 @inproceedings{10761586,
