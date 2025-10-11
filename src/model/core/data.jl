@@ -97,23 +97,153 @@ end
 
 
 """
-    update_load!(pm::_PM.AbstractPowerModel, sample::Dict{String, <:Any}, bounds::AbstractVector{Float64};
+    fix_theta_ref!(pm::_PM.AbstractPowerModel, ids_fixed::Vector{Int};
         nw::Int=_PM.nw_id_default
     )
 
-Update in-place the OPF `model` by:
-- fixing the input active and reactive load variables `pd_fix` and `qd_fix` to the new setpoints in `samples` 
-- replace the lower and upper bounds in the constraint on total load active power
+Update in-place the reference bus(es) of model `pm` by:
+- unfixing the voltage angle for the references buses that are not in `ids_fixed`
+- fixing to zero the voltage angle for the new reference buses among `ids_fixed`
+
+"""
+function fix_theta_ref!(pm::_PM.AbstractPowerModel, ids_fixed::Vector{Int};
+    nw::Int=_PM.nw_id_default
+)
+    var = :va
+    ref = _PM.var(pm, nw, var)
+    ids = sort(first(ref.axes))
+    ids_fixed_old = ids[JuMP.is_fixed.(ref[ids].data)]
+    
+    if !isequal(ids_fixed, ids_fixed_old)
+
+        JuMP.unfix.(_PM.var(pm, nw, var, setdiff(ids_fixed_old, ids_fixed)))
+        JuMP.fix.(_PM.var(pm, nw, var, setdiff(ids_fixed, ids_fixed_old)), 0.0; force = true)
+    end
+    return nothing
+end
+
+
+"""
+    fix_to_zero!(pm::_PM.AbstractPowerModel, ids_fixed::Vector{Int}, element::Symbol, var::Symbol, props::Vector{String};
+        nw::Int=_PM.nw_id_default
+    )
+
+Fix to zero the variable `var` of model `pm` at indices `ids_fixed`, re-defining bounds for initially fixed variables.
 
 ## Notes
 
-The 
-The load `sample` may contain values for a subset of the loads in the power system. Once the load variables
-are fixed to the new setpoints, `sample` is updated to record the active and reactive power values of every
-load in the system.
+Bounds values are derived from the `ref` dictionary of the PowerModels model, at `props` of `element`.
+It is assumed that variable `var` is bounded at both sides. If a single bound is provided under `props`, the
+variable is considered as symmetrically bounded.
+"""
+function fix_to_zero!(pm::_PM.AbstractPowerModel, ids_fixed::Vector{Int}, element::Symbol, var::Symbol, props::Vector{String};
+    nw::Int=_PM.nw_id_default
+)
+    ref = _PM.var(pm, nw, var)
+    ids = sort(first(ref.axes))
+    if isa(first(ids), Tuple)
+        ids_fixed = ids_fixed * 2
+        ids_fixed = sort(vcat(ids_fixed .- 1, ids_fixed))
+    end
+    ids_fixed_new = ids[ids_fixed]
+    ids_fixed_old = ids[JuMP.is_fixed.(ref[ids].data)]
+    
+    if !isequal(ids_fixed_new, ids_fixed_old)
+
+        mask = setdiff(ids_fixed_old, ids_fixed_new)
+        if !isempty(mask)
+            if isa(first(ids), Tuple)
+                bounds = get_pm_value(pm, element, props, Array{Any, 2}; mask=first.(mask)[1:2:end])
+                bounds = repeat(bounds; inner=(2, 1))
+            else
+                bounds = get_pm_value(pm, element, props, Array{Any, 2}; mask=mask)
+            end
+
+            JuMP.unfix.(_PM.var(pm, nw, var, mask))
+            if length(props) === 1
+                JuMP.set_lower_bound.(_PM.var(pm, nw, var, mask), -bounds[:, 1])
+                JuMP.set_upper_bound.(_PM.var(pm, nw, var, mask), bounds[:, 1])
+            elseif length(props) === 2
+                @assert any(diff(bounds, dims=2) .>= 0)
+                JuMP.set_lower_bound.(_PM.var(pm, nw, var, mask), bounds[:, 1])
+                JuMP.set_upper_bound.(_PM.var(pm, nw, var, mask), bounds[:, 2])
+            end
+        end
+        mask = setdiff(ids_fixed_new, ids_fixed_old)
+        JuMP.fix.(_PM.var(pm, nw, var, mask), 0.0; force = true)
+    end    
+    return nothing
+end
+
 
 """
-function update_load_power!(pm::_PM.AbstractPowerModel, sample::Dict{String, <:Any};
+    update_branch_status!(pm::_PM.AbstractPowerModel, ids_faulted::Vector{Int};
+        nw::Int=_PM.nw_id_default
+    )
+
+Set to zero the multiplicative parameter in the active/reactive power flow equation at branches `ids_faulted` .
+"""
+function update_branch_status!(pm::_PM.AbstractPowerModel, ids_faulted::Vector{Int};
+    nw::Int=_PM.nw_id_default
+)
+
+    var = :br_status
+    ref = _PM.var(pm, nw, var)
+    ids = sort(first(ref.axes))
+    ids_faulted_old = ids[iszero.(JuMP.parameter_value.(ref[ids].data))]
+
+    is_changed = false
+    if !isequal(ids_faulted, ids_faulted_old)
+        mask = setdiff(ids_faulted_old, ids_faulted)
+        JuMP.set_parameter_value.(_PM.var(pm, nw, var, mask), 1.0)
+        mask = setdiff(ids_faulted, ids_faulted_old)
+        JuMP.set_parameter_value.(_PM.var(pm, nw, var, ids_faulted), 0.0)
+        is_changed = true
+    end
+    return is_changed
+end
+
+
+"""
+    update_topology!(pm::_PM.AbstractPowerModel, ids_branch::Vector{Int}, ids_bus::Vector{Int}, ids_ref::Vector{Int}, ids_gen::Vector{Int})
+
+Modify in-place the topology of model `pm` by fixing to zero:
+- the voltage angle of new reference buses specified by `ids_ref`
+- the voltage magnitude of buses `ids_bus`
+- the value of power flow equation at indices `ids_branch`
+- the active and reactive power of generators at indices `ids_gen`
+
+## Notes
+
+Variable found initially fixed are unfixed and bounded with original limits.
+No variable is removed from model `pm`.
+
+"""
+function update_topology!(pm::_PM.AbstractPowerModel, ids_branch::Vector{Int}, ids_bus::Vector{Int}, ids_ref::Vector{Int}, ids_gen::Vector{Int})
+
+    is_changed = update_branch_status!(pm, ids_branch)
+    if is_changed
+        fix_theta_ref!(pm, ids_ref)
+        fix_to_zero!(pm, ids_bus, :bus, :vm, ["vmin", "vmax"])
+    end
+    fix_to_zero!(pm, ids_gen, :gen, :pg, ["pmin", "pmax"])
+    fix_to_zero!(pm, ids_gen, :gen, :qg, ["qmin", "qmax"])
+
+    return nothing
+end
+
+
+"""
+    update_load_power!(pm::_PM.AbstractPowerModel, sample::Dict{String, Dict{String, InputData}}, pd_tot::Vector{Float64};
+        nw::Int=_PM.nw_id_default
+    )
+
+Update in-place model `pm` by:
+- fixing the input active and reactive load variables `pd_fix` and `qd_fix` to the new setpoints in `samples` 
+- replace the lower and upper bounds in the constraint on total load active power
+
+"""
+function update_load_power!(pm::_PM.AbstractPowerModel, sample::Dict{String, Dict{String, InputData}}, pd_tot::Vector{Float64};
     nw::Int=_PM.nw_id_default
 )
     ref = "load"
@@ -125,7 +255,7 @@ function update_load_power!(pm::_PM.AbstractPowerModel, sample::Dict{String, <:A
         delete!(sample[ref], var)
     end
     # Update total load active power bounds
-    JuMP.set_normalized_rhs.(pm.model[:pd_tot], pop!(sample, "info") .* [-1, 1])
+    JuMP.set_normalized_rhs.(pm.model[:pd_tot], pd_tot .* [-1, 1])
     return nothing
 end
 
@@ -137,7 +267,7 @@ Update in-place the linear and quadratic generator cost coefficients in the OPF 
 objective function based on the input `sample`.
 
 """
-function update_gen_cost!(pm::_PM.AbstractPowerModel, sample::Dict{String, <:Any};
+function update_gen_cost!(pm::_PM.AbstractPowerModel, sample::Dict{String, Dict{String, InputData}};
     nw::Int=_PM.nw_id_default
 )
     ref, var = "gen", :pg
@@ -159,17 +289,20 @@ end
 
 
 "Wrapper function to update PowerModels optimisation `model` based on the given input `sample`"
-function update_model!(pm::_PM.AbstractPowerModel, sample::Dict{String, <:Any})
+function update_model!(pm::_PM.AbstractPowerModel, sample::InputSample)
 
-    if haskey(sample, "load")
-        update_load_power!(pm, sample)
+    t = sample.topology
+    update_topology!(pm, t.ids_branch, t.ids_bus, t.ids_ref, sort(vcat(t.ids_gen, t.ids_gen_faulted)))
+
+    if haskey(sample.data, "load")
+        update_load_power!(pm, sample.data, sample.pd_tot)
     end
-    if haskey(sample, "gen")
-        update_gen_cost!(pm, sample)
+    if haskey(sample.data, "gen")
+        update_gen_cost!(pm, sample.data)
     end
 
-    for (key, value) in sample
-        isempty(value) && delete!(sample, key)
+    for (key, value) in sample.data
+        isempty(value) && delete!(sample.data, key)
     end
     return nothing
 end
