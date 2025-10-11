@@ -7,7 +7,8 @@ import JuMP
 
 import Random as _RND
 import DataFrames as _DF
-import Distributions as _DS
+import Distributions as _DIST
+import DataStructures as _DS
 import KernelDensity: kde_lscv
 import Serialization: serialize, deserialize
 import CSV
@@ -23,10 +24,7 @@ function __init__()
     BLAS.set_num_threads(1)
 end
 
-const PolyType = NamedTuple{
-    (:A, :b, :ids),
-    Tuple{Matrix{Float64}, Vector{Float64}, Tuple{Vector{Int}, Vector{Int}}}
-}
+include("io/types.jl")
 
 ## OPF problem
 
@@ -49,6 +47,10 @@ include("sampling/data.jl")
 include("sampling/parallel.jl")
 include("sampling/polytope.jl")
 include("sampling/volesti.jl")
+
+## Graph
+
+include("graph/base.jl")
 
 ## I/O
 

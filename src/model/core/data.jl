@@ -59,6 +59,26 @@ function compute_load_reactive_bounds(network::Dict{String, <:Any}, settings::Di
     return vars_new, hcat(bounds, ratios)
 end
 
+"Return the reference bus for a subgraph of model `pm` defined by `buses`, defining it if missing"
+function define_ref_bus(pm::_PM.AbstractPowerModel, buses::Vector{Int}, bus_gen::Vector{Int})
+
+    ref, vars = :bus, ["bus_i", "bus_type"]
+    data = get_pm_value(pm, ref, vars, Array{Any, 2}; mask=buses)
+    if all(data[:, 2] .!= 3)
+
+        # Select a generator with both active and reactive support as reference bus if possible
+        bus_gen = bus_gen[in.(bus_gen, Ref(buses))]
+        if isempty(bus_gen)
+            bus_ref = first(buses)
+        else
+            bus_ref = first(bus_gen)
+        end
+    else
+        bus_ref = first(data[data[:, 2] .=== 3, 1])
+    end
+    return bus_ref
+end
+
 ###############################################################################
 # Optimisation model updates
 ###############################################################################
