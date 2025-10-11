@@ -79,6 +79,29 @@ function define_ref_bus(pm::_PM.AbstractPowerModel, buses::Vector{Int}, bus_gen:
     return bus_ref
 end
 
+"Update in-place the `ref` dictionary of a PowerModel model `pm` based on `topology` perturbation"
+function update_topology!(pm::_PM.AbstractPowerModel, topology::TopologyPerturbation)
+
+    t = topology
+    pm = deepcopy(pm)
+    !isempty(t.ids_ref) && set_pm_value!(pm, :bus, ["bus_type"], 3; mask = t.ids_ref)
+    !isempty(t.ids_bus) && set_pm_value!(pm, :bus, ["is_connected"], 0; mask = topology.ids_bus)
+    !isempty(t.ids_gen) && set_pm_value!(pm, :gen, ["gen_status"], 0; mask = topology.ids_gen)
+    !isempty(t.ids_branch) && set_pm_value!(pm, :branch, ["br_status"], 0; mask = topology.ids_branch)
+    !isempty(t.ids_gen_faulted) && set_pm_value!(pm, :gen, ["pmin", "pmax", "qmin", "qmax"], 0.0; mask = topology.ids_gen_faulted)
+    if !isempty(t.ids_bus)
+        for key in ["load", "shunt"]
+            if isempty(_PM.ref(pm, Symbol(key)))
+                continue
+            end
+            bus = get_pm_value(pm, Symbol(key), [key * "_bus"], Array{Any, 2})
+            ids = findall(x -> in(x, t.ids_bus), vec(bus))
+            !isempty(ids) && set_pm_value!(pm, Symbol(key), ["status"], 0; mask = ids)
+        end
+    end
+    return nothing
+end
+
 ###############################################################################
 # Optimisation model updates
 ###############################################################################

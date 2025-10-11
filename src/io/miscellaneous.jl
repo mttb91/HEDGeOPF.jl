@@ -116,10 +116,14 @@ end
 ###############################################################################
 
 "Export graph model based on PowerModels network in XLSX format"
-function export_graph(model::_PM.AbstractPowerModel, config::String; filename::String = "graph.xlsx")
+function export_graph(model::_PM.AbstractPowerModel, topology::TopologyPerturbation; basename::String = "graph")
 
-    path = joinpath(pwd(), config)
-    
+    path = joinpath(pwd(), "graph")
+    _mkdir(path)
+
+    # Update ref dictionary based on topology perturbation
+    update_topology!(model, topology)
+
     data = Dict{Symbol, _DF.DataFrame}()
     for element in Symbol.(["bus", "branch", "load", "shunt", "gen"])
         # Extract all features of each component table
@@ -138,12 +142,13 @@ function export_graph(model::_PM.AbstractPowerModel, config::String; filename::S
     )
     _DF.select!(data[element], sort(names(data[element])))
     # Identify synchronous condensers (if any)
-    ids = findall(x -> x.pmax - x.pmin .== 0, eachrow(data[element]))
+    ids = findall(x -> (x.pmax - x.pmin .== 0) && (x.qmax - x.qmin .!= 0), eachrow(data[element]))
     if !isempty(ids)
         data[:sync] = data[element][ids, [:gen_bus]]
     end
 
     # Save graph data to xlsx
+    filename = "$basename-$(string(topology.id)).xlsx"
     ∉(filename, readdir(path)) && _to_xlsx(data, joinpath(path, filename))
 
     return nothing
@@ -156,28 +161,21 @@ end
 "Generate unique identifier for AC-OPF instances"
 function generate_uid()
 
-    ls_main = _DF.DataFrame[]
-    configs = filter(entry -> isdir(entry), readdir())
-    for config in configs
-        
-        path = joinpath(pwd(), config)
-        ls_sub = _DF.DataFrame[]
-        for file in filter(x -> contains(x, "info"), readdir(path))
-            data = _DF.DataFrame(CSV.File(joinpath(path, file)))
-            _DF.insertcols!(data, 1, :worker => parse(Int, file[6:end-4]))
-            _DF.insertcols!(data, 2, :case => axes(data, 1))
-            push!(ls_sub, data)    
-        end
-        df = reduce(vcat, ls_sub)
-        _DF.insertcols!(df, 1, :config => parse(Int, config[2:end]))
-        push!(ls_main, df)   
-    end
-    df = reduce(vcat, ls_main)
-    # Sort AC-OPF instances based on total load active power and objective value
-    _DF.sort!(df, [:pd_tot, :objective, :config])
-    _DF.insertcols!(df, 1, :uid => axes(df, 1))
-    _DF.sort!(df, [:config, :worker, :case])
+    path = pwd()
 
-    CSV.write("map.csv", df)
+    ls = _DF.DataFrame[]
+    for file in filter(x -> contains(x, "info"), readdir(path))
+        data = _DF.DataFrame(CSV.File(joinpath(path, file)))
+        _DF.insertcols!(data, 1, :worker => parse(Int, file[6:end-4]))
+        _DF.insertcols!(data, 2, :case => axes(data, 1))
+        push!(ls, data)    
+    end
+    df = reduce(vcat, ls)
+    # Sort AC-OPF instances based on total load active power and objective value
+    _DF.sort!(df, [:pd_tot, :objective, :topology_id])
+    _DF.insertcols!(df, 1, :uid => axes(df, 1))
+    _DF.sort!(df, [:topology_id, :worker, :case])
+
+    CSV.write(joinpath(path, "map.csv"), df)
     return nothing
 end

@@ -143,46 +143,74 @@ end
 # Load perturbation
 ###############################################################################
 
-"Estimate required number of input samples per batch, accounting for convergence rate"
-function estimate_count(data::Vector{Int64}, n_batches::Int, n_items::Int)
+"""
+    record_convergence!(
+        convergence::Dict{Vector{Float64}, _DF.DataFrame},
+        info::_DF.DataFrame,
+        mapping::Dict{Vector{Float64}, Vector{Int}}
+    )
 
-    if iszero(data[end])
-        target = data[begin]
-    else
-        rate = data[end-1] / data[end]
-        target = (data[begin] - data[end-1]) / rate
+Record OPF convergence for different topologies, grouping results by bounds in
+total load active power.
+"""
+function record_convergence!(
+    convergence::Dict{Vector{Float64}, _DF.DataFrame},
+    info::_DF.DataFrame,
+    mapping::Dict{Vector{Float64}, Vector{Int}}
+)
+    for (b, ids) in mapping
+        mask = in.(Int.(info.id), Ref(ids))
+        if !haskey(convergence, b)
+            convergence[b] = info[mask, [:pd_tot, :status]]
+        else
+            convergence[b] = vcat(convergence[b], info[mask, [:pd_tot, :status]])
+        end
     end
-    return repeat([ceil(Int, (target ÷ n_items) / n_batches)], n_batches)
+    return nothing
 end
 
-"Instantiate uniform distribution in total load active power"
-function dist_uniform(polytope::PolyType, settings::NamedTuple)
+"""
+    update_pd_distributions!(
+        distributions::Dict{Vector{Float64}, _DIST.Distribution},
+        convergence::Dict{Vector{Float64}, _DF.DataFrame}
+    )
 
-    # Get total load active power bounds for the polytope
-    # HACK: THIS DOES NOT ACCOUNT FOR LOADS WITH FIXED POWER
-    pd_max = load_power_bound(polytope, settings)
-    pd_min = load_power_bound(polytope, settings; upper=false)
+Update the uniform distributions in total load active power based on convergence
+results, choosing for each distribution the minimum support between the distribution
+own extrema and the global bounds refined based on convergence.
+"""
+function update_pdtot_distributions!(
+    distributions::Dict{Vector{Float64}, _DIST.Distribution},
+    convergence::Dict{Vector{Float64}, _DF.DataFrame}
+)
+    data = reduce(vcat, values(convergence))
+    delta = first(diff([extrema(data.pd_tot)...])) * 0.01
+    bounds_new = [extrema(data[Bool.(data.status), :pd_tot])...]
+    bounds_new += [-delta, delta]
 
-    return _DIST.Uniform(pd_min, pd_max)
+    for bounds in keys(distributions)
+        bmin = max(minimum(bounds), minimum(bounds_new))
+        bmax = min(maximum(bounds), maximum(bounds_new))
+        distributions[bounds] = _DIST.Uniform(bmin, bmax)
+    end
+    return nothing
 end
 
-"Instantiate nonparametric distribution on convergence obtained through Kernel Density Estimation"
-function dist_nonparametric(data::Vector{Matrix{Float64}}; epsilon::Float64 = 1E-6)
+"Estimate the remaining number of input OPF samples to be generated for each topology"
+function estimate_sample_number(
+    counter::ConvergenceCounter,
+    convergence::Dict{Vector{Float64}, _DF.DataFrame},
+    mapping::Dict{Vector{Float64}, Vector{Int}}
+)
+    idx = minimum(reduce(vcat, values(mapping))) - 1
+    rate = zeros(length(counter.n_sample))
+    for (b, ids) in mapping
+        rate[ids .- idx] .= sum(convergence[b].status) / size(convergence[b], 1)
+    end
+    rate = vec(minimum(hcat(rate, counter.n_converged ./ counter.n_iter), dims=2))
+    target = (counter.n_sample - counter.n_converged) ./ rate
 
-    # Get total active power values for converged cases
-    # HACK: CONVERGENCE MUST BE THE SECOND COLUMN
-    data = reduce(vcat, data)
-    data = data[.!iszero.(data[:, 2]), 1]
-
-    grid = kde_lscv(data; boundary=extrema(data), npoints=2^15)
-    # Inverse probability density function
-    pdf = 1 ./ (grid.density .+ epsilon)
-    # Derive probability mass
-    x = (grid.x[1:end-1] .+ grid.x[2:end]) ./ 2
-    mass = ((pdf[1:end-1] .+ pdf[2:end]) ./ 2) .* diff(grid.x)
-    mass ./= sum(mass)
-
-    return _DIST.DiscreteNonParametric(x, mass)
+    return ceil.(Int, target)
 end
 
 """

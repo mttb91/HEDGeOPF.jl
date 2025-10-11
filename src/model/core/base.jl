@@ -6,6 +6,8 @@ function instantiate_network(settings::Dict{String, <:Any})
     network = _PM.parse_file(joinpath(pwd(), settings["PATH"]["input"], settings["CASE"]["grid"]))
     # Reset bus index
     update_bus_ids!(network)
+    # Add flag for nodes in islands without self-balacing capabilities
+    set_pm_value!(network, "bus", ["is_connected"], 1)
     # Add active and reactive load power bounds
     set_pm_value!(network, "load", compute_load_power_bounds(network, settings)...)
     # Add curtailment cost for loads
@@ -31,15 +33,17 @@ function instantiate_model(network::Dict{String, <:Any}, type::String, settings:
 end
 
 "Solve the OPF problem for a given input sample, recording input/output variables"
-function solve_model!(pm::_PM.AbstractPowerModel, db::NamedTuple, sample::Dict{String, <:Any})
+function solve_model!(pm::_PM.AbstractPowerModel, db::NamedTuple, sample::InputSample)
 
+    id = sample.topology.id
     # Update and solve the optimisation model
     update_model!(pm, sample)
     results = _PM.optimize_model!(pm)
-    results["input"] = sample
+    results["input"] = sample.data
+    results["id"] = id
     # Extract relevant data to the database
     extract_data!(db, results, pm)
 
     results = nothing
-    return extract_info(pm)
+    return [float(id), extract_info(pm)...]
 end

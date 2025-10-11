@@ -27,6 +27,13 @@ Base.@kwdef mutable struct InputSample
     data::Dict{String, Dict{String, InputData}} = Dict{String, Dict{String, InputData}}()
 end
 
+mutable struct ConvergenceCounter
+    topology_id::Vector{Int}
+    n_sample::Vector{Int}
+    n_converged::Vector{Int}
+    n_iter::Vector{Int}
+end
+
 const PolyType = NamedTuple{
     (:A, :b, :ids),
     Tuple{Matrix{Float64}, Vector{Float64}, Tuple{Vector{Int}, Vector{Int}}}

@@ -1,31 +1,68 @@
 
-"Generate OPF instances uniformly in total load active power for one power system configuration"
-function generate_opf_instances(model::_PM.AbstractPowerModel, polytope::PolyType, n_samples::Int,
-    config::String, rng::_RND.AbstractRNG, settings::NamedTuple
-)   
-    n_items = settings.CASE.num_items
-    counter = [n_samples, 0, 0];
-    convergence = Matrix{Float64}[]
-    database = instantiate_database(model, settings.MODEL.duals);
-    # Generate OPF instances in batches, monitoring convergence
-    for num in estimate_count(counter, settings.CASE.num_batches, n_items)
-        
-        if isempty(convergence)
-            dist = dist_uniform(polytope, settings);
-        else
-            dist = dist_nonparametric(convergence);
-        end
-        samples = generate_input_samples(dist, polytope, (num, n_items), rng, settings);
-        push!(convergence, generate_opf_samples!(counter, model, database, samples, config));
+"Generate batch of OPF instances uniformly in total load active power for multiple topology perturbations of the same power system"
+function generate_batch!(
+    distributions::Dict{String, Dict{Vector{Float64}, _DIST.Distribution}},
+    convergence::Dict{Vector{Float64}, _DF.DataFrame},
+    generator::TopologyPerturbationGenerator,
+    model::_PM.AbstractPowerModel,
+    polytope::PolyType,
+    n_sample::Vector{Int},
+    rng::_RND.AbstractRNG,
+    setting::NamedTuple
+)
+
+    dim = length(n_sample)
+    database = instantiate_database(model, setting.MODEL.duals)
+
+    topologies, mapping = generate_topologies(generator, dim)
+    samples = instantiate_input_samples(topologies, n_sample)
+    generate_input_samples!(samples, distributions, polytope, rng, setting)
+
+    counter = ConvergenceCounter(
+        getfield.(topologies, :id),
+        n_sample,
+        zeros(Int, dim),
+        zeros(Int, dim)
+    )
+    info = generate_opf_samples!(counter, model, database, samples)
+    record_convergence!(convergence, info, mapping)
+
+    n_sample = estimate_sample_number(counter, convergence, mapping)
+    if any(n_sample .> 0)
+        samples = instantiate_input_samples(topologies, n_sample)
+        generate_input_samples!(samples, distributions, polytope, rng, setting)
+        info = generate_opf_samples!(counter, model, database, samples)
+        record_convergence!(convergence, info, mapping)
     end
-    # Generate one additional batch if target number of feasible samples is not reached
-    num = first(estimate_count(counter, 1, n_items))
-    if num > 0
-        dist = dist_nonparametric(convergence);
-        samples = generate_input_samples(dist, polytope, (num, n_items), rng, settings);
-        push!(convergence, generate_opf_samples!(counter, model, database, samples, config));
+    export_graph.(Ref(model), topologies)
+end
+
+function generate_opf_instances(model::_PM.AbstractPowerModel, polytope::PolyType, rng::_RND.AbstractRNG, setting::NamedTuple)
+
+    # Define number of samples per topology
+    n_topo = setting.TOPOLOGY.num_topo + 1
+    n_batch = setting.CASE.num_batches
+    n_samples = repeat([ceil(Int, setting.CASE.num_samples / n_topo)], n_topo)
+
+    # Instantiate topology generator
+    generator = TopologyPerturbationGenerator(model=model, rng=rng, setting=setting);
+    # Instantiate relevant dictionaries
+    convergence = Dict{Vector{Float64}, _DF.DataFrame}()
+    distributions = Dict("load" => Dict{Vector{Float64}, _DIST.Distribution}())
+
+    c = div(n_topo, n_batch)
+    for n_sample in [n_samples[1+c*i:(i == n_batch-1 ? end : c*i+c)] for i in 0:n_batch-1]
+
+        generate_batch!(
+            distributions,
+            convergence,
+            generator,
+            model,
+            polytope,
+            n_sample, rng, setting
+        )
+        update_pdtot_distributions!(distributions["load"], convergence)
     end
-    return nothing
 end
 
 "Generate OPF dataset by sampling load instances uniformly in total load active power"
@@ -37,26 +74,17 @@ function generate_dataset(path::String; filename::String = "settings.yaml")
     setting = read_settings(filename);
     network = instantiate_network(setting);
     setting = update_settings(setting);
+    rng = read_rng(setting)
     init_workers!(setting)
 
-    # Generate model for base power system configuration
-    models = Dict{String, Any}("C0" => instantiate_model(network, "ACP", setting));
-    n_samples = ceil(Int, setting.CASE.num_samples / length(models))
-
-    # Generate OPF instance for each power system configuration (only one for now)
-    rng = read_rng(setting)
-    for (config, model) in models
-        if config == "C0"
-            if setting.CASE.append
-                polytope = import_polytope()
-            else
-                polytope = instantiate_polytope(model);
-                export_polytope(polytope)
-            end
-        end
-        generate_opf_instances(model, polytope, n_samples, config, rng, setting)
-        export_graph(model, config)
+    model = instantiate_model(network, "ACP", setting)
+    if setting.CASE.append
+        polytope = import_polytope()
+    else
+        polytope = instantiate_polytope(model);
+        export_polytope(polytope)
     end
+    generate_opf_instances(model, polytope, rng, setting)
     
     save_rng(rng)
     if setting.CASE.uid
