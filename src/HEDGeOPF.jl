@@ -1,6 +1,7 @@
 module HEDGeOPF
 
 using LinearAlgebra
+using SparseArrays
 
 import PowerModels as _PM
 import JuMP
@@ -28,6 +29,7 @@ include("io/types.jl")
 
 ## OPF problem
 
+include("model/core/admittance_matrix.jl")
 include("model/core/base.jl")
 include("model/core/constraint_template.jl")
 include("model/core/constraint.jl")

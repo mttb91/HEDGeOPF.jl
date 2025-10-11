@@ -115,6 +115,20 @@ end
 # I/O Power system
 ###############################################################################
 
+"Extract data in COO from CSC matrix and save information to Dataframe"
+function extract_coo_data(data::SparseMatrixCSC{<:Number, Int64})
+
+    values = data.nzval
+    colptr = data.colptr
+    colidx = vcat([fill(j, d) for (j, d) in enumerate(diff(colptr))]...)
+    return _DF.DataFrame(
+        rows = data.rowval,
+        cols = colidx,
+        re = real.(values),
+        im = imag.(values)
+    )
+end
+
 "Export graph model based on PowerModels network in XLSX format"
 function export_graph(model::_PM.AbstractPowerModel, topology::TopologyPerturbation; basename::String = "graph")
 
@@ -147,6 +161,17 @@ function export_graph(model::_PM.AbstractPowerModel, topology::TopologyPerturbat
         data[:sync] = data[element][ids, [:gen_bus]]
     end
 
+    # Add connection indices based on continuous bus mapping
+    indices = calc_connection_indices(data)
+    for (key, value) in indices
+        data[key] = _DF.DataFrame(value, :auto)
+    end
+    # Add admittance matrices based on continuous bus mapping
+    Y = calc_admittance_matrices(data, indices)
+    for (key, value) in zip(keys(Y), Y)
+        data[key] = extract_coo_data(value)
+    end
+    
     # Save graph data to xlsx
     filename = "$basename-$(string(topology.id)).xlsx"
     ∉(filename, readdir(path)) && _to_xlsx(data, joinpath(path, filename))
