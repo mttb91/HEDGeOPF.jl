@@ -78,8 +78,8 @@ end
 
 "Wrapper generator for combined topology perturbations of different types"
 function Base.iterate(gen::TopologyPerturbationGenerator, state::Nothing = nothing)
-    setting = gen.setting.TOPOLOGY
-    gen.state > setting.num_topo + 1 && return nothing
+    setting = gen.setting
+    gen.state > setting.TOPOLOGY.num_topo + 1 && return nothing
 
     pm = gen.model
     if gen.state === 1
@@ -90,7 +90,7 @@ function Base.iterate(gen::TopologyPerturbationGenerator, state::Nothing = nothi
             pg_tot_bounds = limits
         )
     else
-        if setting.generation
+        if setting.TOPOLOGY.generation
             ids_gen_faulted = perturbe_generation(pm, gen.rng)
         else
             ids_gen_faulted = Vector{Int}()
