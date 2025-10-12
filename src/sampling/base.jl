@@ -39,19 +39,27 @@ end
 
 function generate_opf_instances(model::_PM.AbstractPowerModel, polytope::PolyType, rng::_RND.AbstractRNG, setting::NamedTuple)
 
-    # Define number of samples per topology
+    # Batch samples
     n_topo = setting.TOPOLOGY.num_topo + 1
     n_batch = setting.CASE.num_batches
-    n_samples = repeat([ceil(Int, setting.CASE.num_samples / n_topo)], n_topo)
+    n_topo_batch = div(n_topo, n_batch)
+    if iszero(n_topo_batch)
+        n_sample = ceil(Int, setting.CASE.num_samples / n_batch)
+        n_samples = repeat([[n_sample]], n_batch)
+    else
+        n_sample = ceil(Int, setting.CASE.num_samples / n_topo)
+        repeats = repeat([n_topo_batch], n_batch)
+        repeats[end] += n_topo - sum(repeats)
+        n_samples = repeat.([[n_sample]], repeats)
+    end
 
     # Instantiate topology generator
-    generator = TopologyPerturbationGenerator(model=model, rng=rng, setting=setting);
+    generator = TopologyPerturbationGenerator(model=model, rng=rng, setting=setting)
     # Instantiate relevant dictionaries
     convergence = Dict{Vector{Float64}, _DF.DataFrame}()
     distributions = Dict("load" => Dict{Vector{Float64}, _DIST.Distribution}())
 
-    c = div(n_topo, n_batch)
-    for n_sample in [n_samples[1+c*i:(i == n_batch-1 ? end : c*i+c)] for i in 0:n_batch-1]
+    for n_sample in n_samples
 
         generate_batch!(
             distributions,
@@ -61,6 +69,13 @@ function generate_opf_instances(model::_PM.AbstractPowerModel, polytope::PolyTyp
             polytope,
             n_sample, rng, setting
         )
+        if iszero(n_topo_batch)
+            generator = TopologyPerturbationGenerator(
+                model=model,
+                rng=rng,
+                setting=setting
+            )
+        end
         update_pdtot_distributions!(distributions["load"], convergence)
     end
 end
