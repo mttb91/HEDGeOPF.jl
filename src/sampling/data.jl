@@ -17,35 +17,74 @@ function perturbe_topology(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, se
     ids_gen_faulted::Vector{Int} = Vector{Int}()
 )
 
+    ks = 1:setting.TOPOLOGY.k
     nbus = length(_PM.ref(pm, :bus))
-    ngen = length(_PM.ref(pm, :gen))
     edges = get_pm_value(pm, :branch, ["f_bus", "t_bus"], Array{Any, 2})
     dim = size(edges, 1)
 
-    bus_load = vec(get_pm_value(pm, :load, ["load_bus"], Array{Any, 2}))
+    ids_branch, ids_ref, ids_bus, ids_gen = Vector{Int}(), Vector{Int}(), Vector{Int}(), Vector{Int}()
+    while true
+        # Generate ids of branches to be removed
+        n = _RND.rand(rng, ks)
+        ids_branch = _RND.shuffle(rng, 1:dim)[1:n]
+        sort!(ids_branch)
+        # Get largest and all minor connected components
+        lcc, ccs = connected_components(edges, ids_branch, nbus)
+
+        if setting.TOPOLOGY.allow_island
+            ids_bus, ids_ref, ids_gen = identify_islands(
+                pm,
+                vcat([lcc], ccs),
+                ids_gen_faulted,
+                setting
+            )
+            break
+        else
+            isempty(ccs) && break
+        end
+    end
+
+    return (
+        ids_branch = ids_branch,
+        ids_bus = ids_bus,
+        ids_ref = ids_ref,
+        ids_gen = ids_gen
+    )
+end
+
+"""
+    identify_islands(pm::_PM.AbstractPowerModel, ccs::Vector{Vector{Int}}, ids_gen_faulted::Vector{Int}, setting::NamedTuple)
+
+Identify all islands in a perturbed power system `pm` consisting of multiple connected components `ccs`,
+with the first one being the largest. The function records:
+
+- the reference bus of every connected component, defining it if missing
+- the set of buses and generators belonging to minor connecting components without self-balancing capabilities
+
+"""
+function identify_islands(pm::_PM.AbstractPowerModel, ccs::Vector{Vector{Int}}, ids_gen_faulted::Vector{Int}, setting::NamedTuple)
+    
+    ngen = length(_PM.ref(pm, :gen))
     ids_gen_active = deleteat!(collect(1:ngen), ids_gen_faulted)
-    data = get_pm_value(pm, :gen, ["gen_bus", "pmin", "pmax", "qmin", "qmax"], _DF.DataFrame; mask = ids_gen_active)
-    bus_gen = data.gen_bus
+
+    bus_load = vec(get_pm_value(pm, :load, ["load_bus"], Array{Any, 2}))
     # Keep only generators with both active and reactive power support as reference bus candidates
+    data = get_pm_value(pm, :gen, ["gen_bus", "pmin", "pmax", "qmin", "qmax"], _DF.DataFrame;
+        mask = ids_gen_active
+    )
     mask = .!iszero.(data.pmax .- data.pmin) .& .!iszero(data.qmax .- data.qmin)
+    bus_gen = data.gen_bus
     bus_gen_ref = bus_gen[mask]
 
     ids_ref, ids_bus, ids_gen = Vector{Int}(), Vector{Int}(), Vector{Int}()
-
-    # Generate ids of branches to be removed
-    n = _RND.rand(rng, 1:setting.TOPOLOGY.k)
-    ids_branch = _RND.shuffle(rng, 1:dim)[1:n]
-    sort!(ids_branch)
-    # Get largest and all minor connected components
-    lcc, ccs = connected_components(edges, ids_branch, nbus)
     # Define reference bus for largest connected component if missing
-    push!(ids_ref, define_ref_bus(pm, lcc, bus_gen_ref))
+    push!(ids_ref, define_ref_bus(pm, popfirst!(ccs), bus_gen_ref))
     
     for cc in ccs
         sort!(cc)
         # Define a reference bus for the minor connected component
         push!(ids_ref, define_ref_bus(pm, cc, bus_gen_ref))
-        # Record the nodes and generators belonging to islands without self-balancing capabilities
+        # Record the buses and generators belonging to an island without self-balancing capabilities
         has_gen = any(in.(cc, Ref(bus_gen_ref)))
         has_load = any(in.(cc, Ref(bus_load)))
         if (has_gen && has_load) && is_island_feasible(pm, cc, last(ids_ref), setting)
@@ -54,12 +93,7 @@ function perturbe_topology(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, se
         append!(ids_bus, cc)
         append!(ids_gen, ids_gen_active[findall(in.(bus_gen, Ref(cc)))])
     end
-    return (
-        ids_branch = ids_branch,
-        ids_bus = sort(ids_bus),
-        ids_ref = sort(ids_ref),
-        ids_gen = sort(ids_gen)
-    )
+    return sort(ids_bus), sort(ids_ref), sort(ids_gen)
 end
 
 "Generate a single generation perturbation by dropping at most one generator"
