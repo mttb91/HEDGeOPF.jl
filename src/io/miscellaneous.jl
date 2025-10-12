@@ -136,7 +136,7 @@ function export_graph(model::_PM.AbstractPowerModel, topology::TopologyPerturbat
     _mkdir(path)
 
     # Update ref dictionary based on topology perturbation
-    update_topology!(model, topology)
+    model = update_topology(model, topology)
 
     data = Dict{Symbol, _DF.DataFrame}()
     for element in Symbol.(["bus", "branch", "load", "shunt", "gen"])

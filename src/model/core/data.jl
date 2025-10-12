@@ -79,8 +79,32 @@ function define_ref_bus(pm::_PM.AbstractPowerModel, buses::Vector{Int}, bus_gen:
     return bus_ref
 end
 
+"Check if AC-OPF is feasible for subgraph defined by `buses` and reference bus at `bus_ref`"
+function is_island_feasible(pm::_PM.AbstractPowerModel, buses::Vector{Int}, bus_ref::Int, setting::NamedTuple)
+
+    net = deepcopy(pm.data)
+    for (key, value) in filter(x -> isa(x[2], Dict{String, Any}) && !isempty(x[2]), net)
+
+        if key == "bus"
+            net[key] = Dict{String, Any}(i => value[i] for i in string.(buses))
+            net[key][string(bus_ref)]["bus_type"] = 3
+        elseif key == "branch"
+            arcs = reduce(vcat, getindex.(Ref(_PM.ref(pm, :bus_arcs)), buses))
+            ids = unique(first.(filter(x -> all(in.(buses, Ref(last(x, 2)))), arcs)))
+            net[key] = Dict{String, Any}(i => value[i] for i in string.(ids))
+        else
+            var = Symbol("bus_$(key)s")
+            ids = reduce(vcat, getindex.(Ref(_PM.ref(pm, var)), buses))
+            net[key] = Dict{String, Any}(i => value[i] for i in string.(ids))
+        end
+    end
+    pm = instantiate_model(net, "ACP", setting);
+    _PM.optimize_model!(pm)
+    return JuMP.is_solved_and_feasible(pm.model)
+end
+
 "Update in-place the `ref` dictionary of a PowerModel model `pm` based on `topology` perturbation"
-function update_topology!(pm::_PM.AbstractPowerModel, topology::TopologyPerturbation)
+function update_topology(pm::_PM.AbstractPowerModel, topology::TopologyPerturbation)
 
     t = topology
     pm = deepcopy(pm)
@@ -99,7 +123,7 @@ function update_topology!(pm::_PM.AbstractPowerModel, topology::TopologyPerturba
             !isempty(ids) && set_pm_value!(pm, Symbol(key), ["status"], 0; mask = ids)
         end
     end
-    return nothing
+    return pm
 end
 
 ###############################################################################

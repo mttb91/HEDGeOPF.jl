@@ -4,7 +4,7 @@
 ###############################################################################
 
 """
-    perturbe_topology(pm::_PM.AbstractPowerModel, k::Int, rng::_RND.AbstractRNG;
+    perturbe_topology(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, setting::NamedTuple;
         ids_gen_faulted::Vector{Int} = Vector{Int}()
     )
 
@@ -13,7 +13,7 @@ a reference bus for every resulting island. If the island has no self-balancing 
 (i.e. either generation or consumption is missing), the indices of isolated buses and generators
 are recorded as well. 
 """
-function perturbe_topology(pm::_PM.AbstractPowerModel, k::Int, rng::_RND.AbstractRNG;
+function perturbe_topology(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, setting::NamedTuple;
     ids_gen_faulted::Vector{Int} = Vector{Int}()
 )
 
@@ -33,7 +33,7 @@ function perturbe_topology(pm::_PM.AbstractPowerModel, k::Int, rng::_RND.Abstrac
     ids_ref, ids_bus, ids_gen = Vector{Int}(), Vector{Int}(), Vector{Int}()
 
     # Generate ids of branches to be removed
-    n = _RND.rand(rng, 1:k)
+    n = _RND.rand(rng, 1:setting.TOPOLOGY.k)
     ids_branch = _RND.shuffle(rng, 1:dim)[1:n]
     sort!(ids_branch)
     # Get largest and all minor connected components
@@ -43,13 +43,16 @@ function perturbe_topology(pm::_PM.AbstractPowerModel, k::Int, rng::_RND.Abstrac
     
     for cc in ccs
         sort!(cc)
+        # Define a reference bus for the minor connected component
         push!(ids_ref, define_ref_bus(pm, cc, bus_gen_ref))
         # Record the nodes and generators belonging to islands without self-balancing capabilities
-        if !(any(in.(cc, Ref(bus_gen_ref))) && any(in.(cc, Ref(bus_load))))
-
-            append!(ids_bus, cc)
-            append!(ids_gen, ids_gen_active[findall(in.(bus_gen, Ref(cc)))])
+        has_gen = any(in.(cc, Ref(bus_gen_ref)))
+        has_load = any(in.(cc, Ref(bus_load)))
+        if (has_gen && has_load) && is_island_feasible(pm, cc, last(ids_ref), setting)
+            continue
         end
+        append!(ids_bus, cc)
+        append!(ids_gen, ids_gen_active[findall(in.(bus_gen, Ref(cc)))])
     end
     return (
         ids_branch = ids_branch,
@@ -92,7 +95,7 @@ function Base.iterate(gen::TopologyPerturbationGenerator, state::Nothing = nothi
         else
             ids_gen_faulted = Vector{Int}()
         end
-        ids = perturbe_topology(pm, setting.k, gen.rng; ids_gen_faulted = ids_gen_faulted)
+        ids = perturbe_topology(pm, gen.rng, setting; ids_gen_faulted = ids_gen_faulted)
 
         # Add here additional perturbations
 
@@ -250,9 +253,10 @@ function generate_load_samples!(
     ids = reduce(vcat, collect(values(map_dist)))
     pd_tot = pd_tot[sortperm(ids)]
     pd_tot = reduce(vcat, pd_tot)
+    ranges = getfield.(getfield.(samples, :topology), :pg_tot_bounds)
     bounds = hcat(
-        min.(pd_tot .+ 0.01, b0[ncon-1]),
-        max.(pd_tot .- 0.01, -b0[ncon])
+        min.(pd_tot .+ 0.01, last.(ranges)),
+        max.(pd_tot .- 0.01, first.(ranges))
     )
     bounds = bounds .* [1 -1]
     # Sample polytope uniformly in total load active power
