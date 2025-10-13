@@ -108,11 +108,24 @@ function update_topology(pm::_PM.AbstractPowerModel, topology::TopologyPerturbat
 
     t = topology
     pm = deepcopy(pm)
+    ids_gen = sort(collect(_PM.ids(pm, :gen)))
+    ids_branch = sort(collect(_PM.ids(pm, :branch)))
+
     !isempty(t.ids_ref) && set_pm_value!(pm, :bus, ["bus_type"], 3; mask = t.ids_ref)
-    !isempty(t.ids_bus) && set_pm_value!(pm, :bus, ["is_connected"], 0; mask = topology.ids_bus)
-    !isempty(t.ids_gen) && set_pm_value!(pm, :gen, ["gen_status"], 0; mask = topology.ids_gen)
-    !isempty(t.ids_branch) && set_pm_value!(pm, :branch, ["br_status"], 0; mask = topology.ids_branch)
-    !isempty(t.ids_gen_faulted) && set_pm_value!(pm, :gen, ["pmin", "pmax", "qmin", "qmax"], 0.0; mask = topology.ids_gen_faulted)
+    !isempty(t.ids_bus) && set_pm_value!(pm, :bus, ["is_connected"], 0; mask = t.ids_bus)
+    if !isempty(t.ids_gen)
+        ids_mask = findfirst.(isequal.(t.ids_gen), Ref(ids_gen))
+        set_pm_value!(pm, :gen, ["gen_status"], 0; mask = ids_mask)
+    end
+    if !isempty(t.ids_gen_faulted)
+        ids_mask = findfirst.(isequal.(t.ids_gen_faulted), Ref(ids_gen))
+        set_pm_value!(pm, :gen, ["pmin", "pmax", "qmin", "qmax"], 0.0; mask = ids_mask)
+    end
+    if !isempty(t.ids_branch)
+        ids_mask = findfirst.(isequal.(t.ids_branch), Ref(ids_branch))
+        set_pm_value!(pm, :branch, ["br_status"], 0; mask = ids_mask)
+    end
+    
     if !isempty(t.ids_bus)
         for key in ["load", "shunt"]
             if isempty(_PM.ref(pm, Symbol(key)))
@@ -186,25 +199,19 @@ variable is considered as symmetrically bounded.
 function fix_to_zero!(pm::_PM.AbstractPowerModel, ids_fixed::Vector{Int}, element::Symbol, var::Symbol, props::Vector{String};
     nw::Int=_PM.nw_id_default
 )
+    @assert !in(element, [:branch, :branch_dc]) "Elements with tuple index are not supported" 
+
     ref = _PM.var(pm, nw, var)
     ids = sort(first(ref.axes))
-    if isa(first(ids), Tuple)
-        ids_fixed = ids_fixed * 2
-        ids_fixed = sort(vcat(ids_fixed .- 1, ids_fixed))
-    end
-    ids_fixed_new = ids[ids_fixed]
+    ids_fixed_new = copy(ids_fixed)
     ids_fixed_old = ids[JuMP.is_fixed.(ref[ids].data)]
     
     if !isequal(ids_fixed_new, ids_fixed_old)
 
         mask = setdiff(ids_fixed_old, ids_fixed_new)
         if !isempty(mask)
-            if isa(first(ids), Tuple)
-                bounds = get_pm_value(pm, element, props, Array{Any, 2}; mask=first.(mask)[1:2:end])
-                bounds = repeat(bounds; inner=(2, 1))
-            else
-                bounds = get_pm_value(pm, element, props, Array{Any, 2}; mask=mask)
-            end
+            ids_mask = findfirst.(isequal.(mask), Ref(ids))
+            bounds = get_pm_value(pm, element, props, Array{Any, 2}; mask=ids_mask)
 
             JuMP.unfix.(_PM.var(pm, nw, var, mask))
             if length(props) === 1
@@ -244,7 +251,7 @@ function update_branch_status!(pm::_PM.AbstractPowerModel, ids_faulted::Vector{I
         mask = setdiff(ids_faulted_old, ids_faulted)
         JuMP.set_parameter_value.(_PM.var(pm, nw, var, mask), 1.0)
         mask = setdiff(ids_faulted, ids_faulted_old)
-        JuMP.set_parameter_value.(_PM.var(pm, nw, var, ids_faulted), 0.0)
+        JuMP.set_parameter_value.(_PM.var(pm, nw, var, mask), 0.0)
         is_changed = true
     end
     return is_changed

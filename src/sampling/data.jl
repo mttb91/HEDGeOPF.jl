@@ -19,17 +19,18 @@ function perturbe_topology(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, se
 
     ks = 1:setting.TOPOLOGY.k
     nbus = length(_PM.ref(pm, :bus))
-    edges = get_pm_value(pm, :branch, ["f_bus", "t_bus"], Array{Any, 2})
-    dim = size(edges, 1)
+    edges = get_pm_value(pm, :branch, ["index", "f_bus", "t_bus"], Array{Any, 2})
+    dims = 1:size(edges, 1)
 
-    ids_branch, ids_ref, ids_bus, ids_gen = Vector{Int}(), Vector{Int}(), Vector{Int}(), Vector{Int}()
+    ids_branch = Vector{Int}()
+    ids_ref, ids_bus, ids_gen = Vector{Int}(), Vector{Int}(), Vector{Int}()
     while true
         # Generate ids of branches to be removed
         n = _RND.rand(rng, ks)
-        ids_branch = _RND.shuffle(rng, 1:dim)[1:n]
-        sort!(ids_branch)
+        ids = sort(_RND.shuffle(rng, dims)[1:n])
+        ids_branch = edges[ids, 1]
         # Get largest and all minor connected components
-        lcc, ccs = connected_components(edges, ids_branch, nbus)
+        lcc, ccs = connected_components(edges[:, end-1:end], ids, nbus)
 
         if setting.TOPOLOGY.allow_island
             ids_bus, ids_ref, ids_gen = identify_islands(
@@ -64,13 +65,14 @@ with the first one being the largest. The function records:
 """
 function identify_islands(pm::_PM.AbstractPowerModel, ccs::Vector{Vector{Int}}, ids_gen_faulted::Vector{Int}, setting::NamedTuple)
     
-    ngen = length(_PM.ref(pm, :gen))
-    ids_gen_active = deleteat!(collect(1:ngen), ids_gen_faulted)
+    ids_gen = sort(collect(_PM.ids(pm, :gen)))
+    ids_gen_active = filter(x -> !in(x, ids_gen_faulted), ids_gen)
 
     bus_load = vec(get_pm_value(pm, :load, ["load_bus"], Array{Any, 2}))
     # Keep only generators with both active and reactive power support as reference bus candidates
+    ids_mask = findfirst.(isequal.(ids_gen_active), Ref(ids_gen))
     data = get_pm_value(pm, :gen, ["gen_bus", "pmin", "pmax", "qmin", "qmax"], _DF.DataFrame;
-        mask = ids_gen_active
+        mask = ids_mask
     )
     mask = .!iszero.(data.pmax .- data.pmin) .& .!iszero(data.qmax .- data.qmin)
     bus_gen = data.gen_bus
@@ -91,7 +93,7 @@ function identify_islands(pm::_PM.AbstractPowerModel, ccs::Vector{Vector{Int}}, 
             continue
         end
         append!(ids_bus, cc)
-        append!(ids_gen, ids_gen_active[findall(in.(bus_gen, Ref(cc)))])
+        append!(ids_gen, ids_gen_active[in.(bus_gen, Ref(cc))])
     end
     return sort(ids_bus), sort(ids_ref), sort(ids_gen)
 end
@@ -99,10 +101,10 @@ end
 "Generate a single generation perturbation by dropping at most one generator"
 function perturbe_generation(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG)
 
-    dim = length(_PM.ref(pm, :gen))
+    ids_gen = collect(_PM.ids(pm, :gen))
     n = _RND.rand(rng, 0:1)
     if !iszero(n)
-        ids = _RND.shuffle(rng, 1:dim)[1:n]
+        ids = _RND.shuffle(rng, ids_gen)[1:n]
         sort!(ids)
     else
         ids = Vector{Int}()
@@ -133,9 +135,12 @@ function Base.iterate(gen::TopologyPerturbationGenerator, state::Nothing = nothi
 
         # Add here additional perturbations
 
-        ngen = length(_PM.ref(pm, :gen))
-        mask = deleteat!(collect(1:ngen), sort(vcat(ids.ids_gen, ids_gen_faulted)))
-        limits = vec(sum(get_pm_value(pm, :gen, ["pmin", "pmax"], Array{Any, 2}; mask = mask), dims=1))
+        # Compute limits in total generator active power for given topology
+        ids_gen = sort(collect(_PM.ids(pm, :gen)))
+        ids_gen_remove = Set(sort(vcat(ids.ids_gen, ids_gen_faulted)))
+        limits = get_pm_value(pm, :gen, ["pmin", "pmax"], Array{Any, 2};
+            mask = findall(x -> !in(x, ids_gen_remove), ids_gen)
+        )
 
         perturbation = TopologyPerturbation(
             gen.state,
@@ -144,7 +149,7 @@ function Base.iterate(gen::TopologyPerturbationGenerator, state::Nothing = nothi
             ids.ids_ref,
             ids.ids_gen,
             ids_gen_faulted,
-            limits
+            vec(sum(limits, dims=1))
         )
     end
     gen.state += 1
