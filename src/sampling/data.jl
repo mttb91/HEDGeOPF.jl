@@ -115,7 +115,7 @@ end
 "Wrapper generator for combined topology perturbations of different types"
 function Base.iterate(gen::TopologyPerturbationGenerator, state::Nothing = nothing)
     setting = gen.setting
-    gen.state > setting.TOPOLOGY.num_topo + 1 && return nothing
+    gen.state > ceil(Int, setting.TOPOLOGY.num_topo * 1.2) + 1 && return nothing
 
     pm = gen.model
     if gen.state === 1
@@ -252,7 +252,12 @@ function estimate_sample_number(
     rate = vec(minimum(hcat(rate, counter.n_converged ./ counter.n_iter), dims=2))
     target = (counter.n_sample - counter.n_converged) ./ rate
 
-    return ceil.(Int, target)
+    # Do not generate additional samples for topologies with zero convergence
+    ids_zero = findall(isinf, target)
+    target[ids_zero] .= -1.0
+    n_sample_new = repeat([maximum(counter.n_sample)], length(ids_zero))
+
+    return ceil.(Int, target), n_sample_new
 end
 
 """

@@ -27,14 +27,16 @@ function generate_batch!(
     info = generate_opf_samples!(counter, model, database, samples)
     record_convergence!(convergence, info, mapping)
 
-    n_sample = estimate_sample_number(counter, convergence, mapping)
+    n_sample, n_sample_new = estimate_sample_number(counter, convergence, mapping)
     if any(n_sample .> 0)
         samples = instantiate_input_samples(topologies, n_sample)
         generate_input_samples!(samples, distributions, polytope, rng, setting)
         info = generate_opf_samples!(counter, model, database, samples)
         record_convergence!(convergence, info, mapping)
     end
-    export_graph.(Ref(model), topologies)
+    export_graph.(Ref(model), topologies[.!isless.(n_sample, 0)])
+
+    return n_sample_new
 end
 
 function generate_opf_instances(model::_PM.AbstractPowerModel, polytope::PolyType, rng::_RND.AbstractRNG, setting::NamedTuple)
@@ -59,9 +61,11 @@ function generate_opf_instances(model::_PM.AbstractPowerModel, polytope::PolyTyp
     convergence = Dict{Vector{Float64}, _DF.DataFrame}()
     distributions = Dict("load" => Dict{Vector{Float64}, _DIST.Distribution}())
 
+    residual = Vector{Int}()
     for n_sample in n_samples
 
-        generate_batch!(
+        append!(n_sample, residual)
+        residual = generate_batch!(
             distributions,
             convergence,
             generator,
