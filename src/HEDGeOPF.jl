@@ -2,6 +2,7 @@ module HEDGeOPF
 
 using LinearAlgebra
 using SparseArrays
+using Statistics
 
 import PowerModels as _PM
 import JuMP

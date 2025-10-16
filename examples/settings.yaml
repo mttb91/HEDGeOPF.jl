@@ -21,6 +21,10 @@ SAMPLING:
     max_pf      : 0.99                          # ::Float64 - Maximum allowable load power factor
     min_pf      : 0.01                          # ::Float64 - Minimum allowable load power factor
 
+DATASET:
+    num_folds     : 10                          # ::Int - Number of cross-validation folds in which the dataset is split
+    num_quantiles : 20                          # ::Int - Number of quantiles of total load active power in which OPF samples are classified
+
 PARALLEL:
     cpu_ratio : 50.0                            # ::Float64 - Percentage of CPU threads to use w.r.t. `Sys.CPU_THREADS` count
 
