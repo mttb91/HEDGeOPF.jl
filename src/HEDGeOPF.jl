@@ -11,10 +11,9 @@ import Random as _RND
 import DataFrames as _DF
 import Distributions as _DIST
 import DataStructures as _DS
-import KernelDensity: kde_lscv
 import Serialization: serialize, deserialize
+import ZipArchives as _ZA
 import CSV
-import XLSX
 import YAML
 import RCall
 

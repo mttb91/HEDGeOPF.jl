@@ -37,15 +37,22 @@ function _mkdir(path::String)
     return nothing
 end
 
-"Export a dictionary of DataFrames to Excel naming the sheets by the sorted dictionary keys."
-function _to_xlsx(data::Dict{<:Any, _DF.DataFrame}, filepath::String)
+"Export a dictionary of DataFrame to zip folder of CSV files"
+function _to_zip(data::Dict{<:Any, _DF.DataFrame}, path::String)
 
-    # Save static input information
-    XLSX.openxlsx(filepath, mode="w") do xf
-        for (i, key) in enumerate(sort!(collect(keys(data))))
+    _mkpath(dirname(path))
 
-            i == 1 ? XLSX.rename!(xf[i], String(key)) : XLSX.addsheet!(xf, String(key))
-            XLSX.writetable!(xf[i], data[key])
+    _ZA.ZipWriter(path) do w
+        for key in sort(collect(keys(data)))
+
+            _ZA.zip_newfile(w, "$key.csv"; compress=true)
+            io = IOBuffer()
+            try
+                CSV.write(io, data[key])
+                write(w, take!(io))
+            finally
+                close(io)
+            end
         end
     end
 end
@@ -130,7 +137,7 @@ function extract_coo_data(data::SparseMatrixCSC{<:Number, Int64})
 end
 
 "Export graph model based on PowerModels network in XLSX format"
-function export_graph(model::_PM.AbstractPowerModel, topology::TopologyPerturbation; basename::String = "graph")
+function export_graph(model::_PM.AbstractPowerModel, topology::TopologyPerturbation)
 
     path = joinpath(pwd(), "graph")
     _mkdir(path)
@@ -139,11 +146,12 @@ function export_graph(model::_PM.AbstractPowerModel, topology::TopologyPerturbat
     model = update_topology(model, topology)
 
     data = Dict{Symbol, _DF.DataFrame}()
-    for element in Symbol.(["bus", "branch", "load", "shunt", "gen"])
+    elements = [:bus, :branch, :load, :shunt, :gen]
+    for element in elements
         # Extract all features of each component table
         if !isempty(_PM.ref(model, element))
             vars = get_pm_key(model, element)
-            filter!(x -> !in(x, ["index", "source_id"]), vars)
+            filter!(x -> !in(x, ["source_id"]), vars)
             data[element] = get_pm_value(model, element, sort!(vars), _DF.DataFrame)
         end
     end
@@ -158,23 +166,19 @@ function export_graph(model::_PM.AbstractPowerModel, topology::TopologyPerturbat
     # Identify synchronous condensers (if any)
     ids = findall(x -> (x.pmax - x.pmin .== 0) && (x.qmax - x.qmin .!= 0), eachrow(data[element]))
     if !isempty(ids)
-        data[:sync] = data[element][ids, [:gen_bus]]
+        data[:sync] = data[element][ids, [:gen_bus, :gen_status]]
     end
 
-    # Add connection indices based on continuous bus mapping
-    indices = calc_connection_indices(data)
-    for (key, value) in indices
-        data[key] = _DF.DataFrame(value, :auto)
-    end
     # Add admittance matrices based on continuous bus mapping
+    indices = calc_connection_indices(data)
     Y = calc_admittance_matrices(data, indices)
     for (key, value) in zip(keys(Y), Y)
-        data[key] = extract_coo_data(value)
+        data[Symbol("_$key")] = extract_coo_data(value)
     end
     
-    # Save graph data to xlsx
-    filename = "$basename-$(string(topology.id)).xlsx"
-    ∉(filename, readdir(path)) && _to_xlsx(data, joinpath(path, filename))
+    # Save graph data to zip of CSVs
+    filename = "$(topology.id).zip"
+    ∉(filename, readdir(path)) && _to_zip(data, joinpath(path, filename))
 
     return nothing
 end
