@@ -22,6 +22,14 @@ function perturbe_topology(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, se
     edges = get_pm_value(pm, :branch, ["index", "f_bus", "t_bus"], Array{Any, 2})
     dims = 1:size(edges, 1)
 
+    # Identify candidate reference buses among those with installed active generation
+    cols = ["index", "gen_bus", "pmin", "pmax", "qmin", "qmax"]
+    ids_gen = sort(collect(_PM.ids(pm, :gen)))
+    ids_mask = findfirst.(isequal.(setdiff(ids_gen, ids_gen_faulted)), Ref(ids_gen))
+    data = get_pm_value(pm, :gen, cols, _DF.DataFrame; mask = ids_mask)
+    data.mask_ref = .!iszero.(data.pmax .- data.pmin) .& .!iszero(data.qmax .- data.qmin)
+    _DF.select!(data, ["index", "gen_bus", "mask_ref"])
+
     ids_branch = Vector{Int}()
     ids_ref, ids_bus, ids_gen = Vector{Int}(), Vector{Int}(), Vector{Int}()
     while true
@@ -36,12 +44,16 @@ function perturbe_topology(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, se
             ids_bus, ids_ref, ids_gen = identify_islands(
                 pm,
                 vcat([lcc], ccs),
-                ids_gen_faulted,
+                data,
                 setting
             )
             break
         else
-            isempty(ccs) && break
+            if isempty(ccs)
+                bus_gen_ref = data.gen_bus[data.mask_ref]
+                push!(ids_ref, define_ref_bus(pm, lcc, bus_gen_ref))
+                break
+            end
         end
     end
 
@@ -63,20 +75,18 @@ with the first one being the largest. The function records:
 - the set of buses and generators belonging to minor connecting components without self-balancing capabilities
 
 """
-function identify_islands(pm::_PM.AbstractPowerModel, ccs::Vector{Vector{Int}}, ids_gen_faulted::Vector{Int}, setting::NamedTuple)
+function identify_islands(
+    pm::_PM.AbstractPowerModel,
+    ccs::Vector{Vector{Int}},
+    gen_data::_DF.DataFrame,
+    setting::NamedTuple
+)
     
-    ids_gen = sort(collect(_PM.ids(pm, :gen)))
-    ids_gen_active = filter(x -> !in(x, ids_gen_faulted), ids_gen)
+    bus_gen = gen_data.gen_bus
+    bus_gen_ref = bus_gen[gen_data.mask_ref]
+    ids_gen_active = gen_data.index
 
     bus_load = vec(get_pm_value(pm, :load, ["load_bus"], Array{Any, 2}))
-    # Keep only generators with both active and reactive power support as reference bus candidates
-    ids_mask = findfirst.(isequal.(ids_gen_active), Ref(ids_gen))
-    data = get_pm_value(pm, :gen, ["gen_bus", "pmin", "pmax", "qmin", "qmax"], _DF.DataFrame;
-        mask = ids_mask
-    )
-    mask = .!iszero.(data.pmax .- data.pmin) .& .!iszero(data.qmax .- data.qmin)
-    bus_gen = data.gen_bus
-    bus_gen_ref = bus_gen[mask]
 
     ids_ref, ids_bus, ids_gen = Vector{Int}(), Vector{Int}(), Vector{Int}()
     # Define reference bus for largest connected component if missing

@@ -126,6 +126,18 @@ function update_topology(pm::_PM.AbstractPowerModel, topology::TopologyPerturbat
         set_pm_value!(pm, :branch, ["br_status"], 0; mask = ids_mask)
     end
     
+    # Convert PV buses with only faulted/disconnected generation to PQ type
+    ids = sort(vcat(t.ids_gen, t.ids_gen_faulted))
+    if !isempty(ids)
+        bus_pv = vec(get_pm_value(pm, :gen, ["gen_bus"], Array{Any, 2}))
+        ids_mask = findfirst.(isequal.(ids), Ref(ids_gen))
+        bus_pq = setdiff(bus_pv[ids_mask], t.ids_ref)
+        if !isempty(bus_pq)
+            set_pm_value!(pm, :bus, ["bus_type"], 1; mask = bus_pq)
+        end
+    end
+
+    # Deactivate also loads and shunt connected to isolated nodes
     if !isempty(t.ids_bus)
         for key in ["load", "shunt"]
             if isempty(_PM.ref(pm, Symbol(key)))
