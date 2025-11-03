@@ -59,6 +59,15 @@ function compute_load_reactive_bounds(network::Dict{String, <:Any}, settings::Di
     return vars_new, hcat(bounds, ratios)
 end
 
+"Return mask of specifying if generators are synchronous condensers"
+function is_synchronous(network::Dict{String, <:Any})
+
+    ref, vars, vars_new = "gen", ["pmin", "pmax", "qmin", "qmax"], ["is_synchronous"]
+    data = get_pm_value(network, ref, vars, _DF.DataFrame)
+    mask = (data.pmax - data.pmin .== 0) .&& (data.qmax - data.qmin .!= 0)
+    return vars_new, mask
+end
+
 "Return the reference bus for a subgraph of model `pm` defined by `buses`, defining it if missing"
 function define_ref_bus(pm::_PM.AbstractPowerModel, buses::Vector{Int}, bus_gen::Vector{Int})
 

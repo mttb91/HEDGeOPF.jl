@@ -12,6 +12,8 @@ function instantiate_network(settings::Dict{String, <:Any})
     set_pm_value!(network, "load", compute_load_power_bounds(network, settings)...)
     # Add curtailment cost for loads
     set_pm_value!(network, "load", ["curt_cost"], settings["MODEL"]["voll"] * network["baseMVA"])
+    # Add flag for synchronous condensers
+    set_pm_value!(network, "gen", is_synchronous(network)...)
 
     return network
 end

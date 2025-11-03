@@ -107,3 +107,31 @@ function calc_admittance_matrices(data::Dict{Symbol, _DF.DataFrame}, indices::Di
     end
     return _calc_admittance_matrices(n_bus, branch_data, shunt_data, indices)
 end
+
+
+"""
+    calc_susceptance_matrices(data::Dict{Symbol, _DF.DataFrame}, indices::Dict{Symbol, Matrix{Int}})
+
+Compute `B'` and `B''` matrices for Fast Decoupled Power Flow in BX version
+"""
+function calc_susceptance_matrices(data::Dict{Symbol, _DF.DataFrame}, indices::Dict{Symbol, Matrix{Int}})
+
+    ref = :branch
+    # Compute B'
+    data_temp = deepcopy(data)
+    if !isempty(get(data_temp, :shunt, _DF.DataFrame()))
+        data_temp[:shunt][!, "bs"] .= 0.0
+    end
+    for (key, value) in zip(["b_fr", "b_to", "tap"], [0.0, 0.0, 1.0])
+        data_temp[ref][!, key] .= value
+    end
+    Bp = -1.0 .* imag(calc_admittance_matrices(data_temp, indices).Ybus)
+    # Compute B''
+    data_temp = deepcopy(data)
+    for (key, value) in zip(["br_r", "shift"], [0.0, 0.0])
+        data_temp[ref][!, key] .= value
+    end
+    Bpp = -1.0 .* imag(calc_admittance_matrices(data_temp, indices).Ybus)
+
+    return (Bp = Bp, Bpp = Bpp)
+end

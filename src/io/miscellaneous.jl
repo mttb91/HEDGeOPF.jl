@@ -128,12 +128,12 @@ function extract_coo_data(data::SparseMatrixCSC{<:Number, Int64})
     values = data.nzval
     colptr = data.colptr
     colidx = vcat([fill(j, d) for (j, d) in enumerate(diff(colptr))]...)
-    return _DF.DataFrame(
-        rows = data.rowval,
-        cols = colidx,
-        re = real.(values),
-        im = imag.(values)
-    )
+    if all(isreal.(values))
+        ntp = (rows = data.rowval, cols = colidx, re = real.(values))
+    else
+        ntp = (rows = data.rowval, cols = colidx, re = real.(values), im = imag.(values))
+    end
+    return _DF.DataFrame(ntp)
 end
 
 "Export graph model based on PowerModels network in XLSX format"
@@ -156,18 +156,12 @@ function export_graph(model::_PM.AbstractPowerModel, topology::TopologyPerturbat
         end
     end
 
-    element = :gen
-    vars = [:cost, :ncost]
+    element, vars = :gen, [:cost, :ncost]
     # Unfold cost vector into components
     _DF.select!(data[element], _DF.Not(vars),
         vars => _DF.ByRow((x, y) -> vcat(repeat([0.0], 3-y), x)) => [:c2, :c1, :c0]
     )
     _DF.select!(data[element], sort(names(data[element])))
-    # Identify synchronous condensers (if any)
-    ids = findall(x -> (x.pmax - x.pmin .== 0) && (x.qmax - x.qmin .!= 0), eachrow(data[element]))
-    if !isempty(ids)
-        data[:sync] = data[element][ids, [:gen_bus, :gen_status]]
-    end
 
     # Add admittance matrices based on continuous bus mapping
     indices = calc_connection_indices(data)
@@ -175,7 +169,12 @@ function export_graph(model::_PM.AbstractPowerModel, topology::TopologyPerturbat
     for (key, value) in zip(keys(Y), Y)
         data[Symbol("_$key")] = extract_coo_data(value)
     end
-    
+    # Add susceptance matrices for Fast Decoupled Power Flow
+    B = calc_susceptance_matrices(data, indices)
+    for (key, value) in zip(keys(B), B)
+        data[Symbol("_$key")] = extract_coo_data(value)
+    end
+
     # Save graph data to zip of CSVs
     filename = "$(topology.id).zip"
     ∉(filename, readdir(path)) && _to_zip(data, joinpath(path, filename))
