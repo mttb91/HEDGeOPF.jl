@@ -58,6 +58,7 @@ include("graph/base.jl")
 
 include("io/miscellaneous.jl")
 include("io/results.jl")
+include("io/splitting.jl")
 include("io/settings.jl")
 
 _PM.silence()

@@ -107,7 +107,7 @@ function generate_dataset(path::String; filename::String = "settings.yaml")
     
     save_rng(rng)
     if setting.CASE.uid
-        generate_split(setting)
+        generate_uid(pwd())
     end
     _DC.nprocs() > 1 && _DC.rmprocs(_DC.workers());
     println("Total elapsed time: $(round((time() - t1)/3600, digits=2)) [h]")
