@@ -1,7 +1,6 @@
 CASE:
     name        : "example"                     # ::String - Name of the folder in which the dataset is saved
     grid        : "case5_pjm.m"                 # ::String - Full name of the power system grid file
-    uid         : true                          # ::Bool - Whether to generate a unique identifier for each AC-OPF instance
     append      : false                         # ::Bool - Whether to append new results to an existing dataset
     baseseed    : 0                             # ::Int64 - Random number generator seed to control reproducibility
     num_samples : 10000                         # ::Int64 - Total number of AC-OPF samples to generate
@@ -21,6 +20,8 @@ SAMPLING:
     min_pf      : 0.01                          # ::Float64 - Minimum allowable load power factor
 
 DATASET:
+    name          : "split"                     # ::String - Name of the folder in which dataset splits are saved
+    cleanup       : false                       # ::Bool - Whether to remove all the original dataset, keeping only split format
     num_folds     : 10                          # ::Int - Number of cross-validation folds in which the dataset is split
     num_quantiles : 20                          # ::Int - Number of quantiles of total load active power in which OPF samples are classified
 

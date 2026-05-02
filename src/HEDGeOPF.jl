@@ -11,6 +11,7 @@ import Random as _RND
 import DataFrames as _DF
 import Distributions as _DIST
 import DataStructures as _DS
+import DuckDB as _DDB
 import Serialization: serialize, deserialize
 import ZipArchives as _ZA
 import CSV
@@ -57,6 +58,7 @@ include("graph/base.jl")
 ## I/O
 
 include("io/miscellaneous.jl")
+include("io/output.jl")
 include("io/results.jl")
 include("io/splitting.jl")
 include("io/settings.jl")

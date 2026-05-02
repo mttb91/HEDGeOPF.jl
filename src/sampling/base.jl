@@ -104,12 +104,12 @@ function generate_dataset(path::String; filename::String = "settings.yaml")
         export_polytope(polytope)
     end
     generate_opf_instances(model, polytope, rng, setting)
+    _DC.nprocs() > 1 && _DC.rmprocs(_DC.workers());
     
     save_rng(rng)
-    if setting.CASE.uid
-        generate_uid(pwd())
-    end
-    _DC.nprocs() > 1 && _DC.rmprocs(_DC.workers());
+    generate_uid(pwd(), setting.DATASET.cleanup)
+    generate_split(setting)
+
     println("Total elapsed time: $(round((time() - t1)/3600, digits=2)) [h]")
     return nothing
 end
