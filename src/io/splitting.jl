@@ -1,40 +1,38 @@
 
 """
-    generate_split(setting::NamedTuple)
+    generate_cv_folds!(map:: _DF.DataFrame, setting::NamedTuple)
 
-Split the AC-OPF dataset in folds for cross-validation, creating a reproducible mapping between
-instance ID (in terms of worker, topology and case) and fold which it belongs to.
-The mapping is saved as `map.csv` in the main dataset folder.
-
-## Notes
+Generate cross-validation folds for AC-OPF instances based on selected splitting strategy and insert
+the fold assignment as new column "fold" in the `map` dataframe.
 
 The splitting strategy is automatically selected depending on whether a single or multiple topologies
 are available:
-- In case of single topology, splitting is performed as stratified in terms of total load active power.
+- **In case of single topology**, splitting is performed as stratified in terms of total load active power.
 Is is expected that AC-OPF instances are uniquely identified as sorted by this variable.
-- In case of multiple topologies, these are distributed across the different folders, with each topology
+- **In case of multiple topologies**, these are distributed across the different folders, with each topology
 belonging to a single fold.
-"""
-function generate_split(setting::NamedTuple)
 
-    path = pwd()
+"""
+function generate_cv_folds!(map:: _DF.DataFrame, setting::NamedTuple)
+
     n_fold = setting.DATASET.num_folds
-    n_quantile = setting.DATASET.num_quantiles
     rng = _RND.MersenneTwister(setting.CASE.baseseed)
 
-    filename = joinpath(path, "map.csv")
-    @assert isfile(filename) "The file map.csv does not exist in $path. Run generate_uid(path) first."
-    map = _DF.DataFrame(CSV.File(filename))
-
     if length(unique(map.topology_id)) == 1
-        folds = total_load_active_power_split(map, rng, n_fold, n_quantile)
+        folds = total_load_active_power_split(
+            map,
+            rng,
+            n_fold,
+            setting.DATASET.num_quantiles)
     else
         folds = topology_split(map, rng, n_fold)
     end
     _DF.insertcols!(map, 2, :fold => folds)
+    # Remove unassigned instances from split-specific map in any
+    # HACK: it is assumed that unassigned instances have fold value equal to -1
+    filter!(:fold => !=(-1), map)
 
-    _DF.sort!(map, [:worker, :case, :topology_id])
-    CSV.write(filename, map)
+    @assert all(map.fold .> 0) "Valid fold values are integer-based and greater than 0."
     return nothing
 end
 
