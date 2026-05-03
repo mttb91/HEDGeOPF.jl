@@ -77,7 +77,12 @@ function _write_parquet!(db::_DDB.DB, data::_DF.DataFrame, path::String)
 end
 
 "Fuse cases across workers into each fold for a given variable."
-function _combine_cases(var::String, component::String, cases::Dict{Int, Dict{Int, _DF.DataFrame}}, n_fold::Int)
+function _combine_cases(
+    var::String,
+    component::String,
+    cases::Dict{Int, Dict{Int, _DF.DataFrame}},
+    n_fold::Int
+)
 
     data = Dict(fold => _DF.DataFrame[] for fold in 1:n_fold)
     for worker in sort(collect(keys(cases)))
@@ -92,7 +97,6 @@ function _combine_cases(var::String, component::String, cases::Dict{Int, Dict{In
             map = cases[worker][fold]
             chunk = df[map.case, :]
             _DF.insertcols!(chunk, 1, :uid => map.uid)
-            _DF.insertcols!(chunk, 2, :topology_id => map.topology_id)
             push!(data[fold], chunk)
         end
     end
@@ -103,13 +107,12 @@ end
 """
     generate_split(setting::NamedTuple; dst::Union{String, Nothing} = nothing)
 
-Split the AC-OPF dataset in folds for cross-validation and generate an `dst`
-folder containing the split map and one parquet file per variable and fold.
-Each parquet file has size S x (C + 2), where S is the number of AC-OPF instances
-in the fold and C is the number of variables for the given component type. The
-additional columns are:
-- `uid`: unique identifier of the AC-OPF instance
-- `topology_id`: identifier for the topology of the AC-OPF instance
+Split the AC-OPF dataset in folds for cross-validation and generate an `dst` folder
+containing the split map and one parquet file per variable and fold. Each parquet file has
+size S x (C + 1), where S is the number of AC-OPF instances in the fold and C is the number
+of variables for the given component type. The additional metadata column `uid` provides the
+unique identifier of the AC-OPF instance, which can be used to uniquely recover in the
+global mapping file `map.parquet` the topology associated with each instance.
 """
 function generate_split(setting::NamedTuple; dst::Union{String, Nothing} = nothing)
 
