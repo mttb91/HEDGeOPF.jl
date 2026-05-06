@@ -92,7 +92,7 @@ function generate_dataset(path::String; filename::String = "settings.yaml")
 
     setting = read_settings(filename);
     network = instantiate_network(setting);
-    setting = update_settings(setting);
+    setting = update_settings(setting; filename=filename);
     rng = read_rng(setting)
     init_workers!(setting)
 
