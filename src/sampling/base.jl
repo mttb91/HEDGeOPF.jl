@@ -105,7 +105,11 @@ function generate_dataset(path::String; filename::String = "settings.yaml")
     end
     generate_opf_instances(model, polytope, rng, setting)
     _DC.nprocs() > 1 && _DC.rmprocs(_DC.workers());
-    
+
+    if setting.DATASET.separate_unfeasible.active
+        duplicate_unfeasible_instances!(setting)
+    end
+
     save_rng(rng)
     generate_uid(setting.DATASET.cleanup)
     generate_split(setting)

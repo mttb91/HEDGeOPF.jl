@@ -24,6 +24,11 @@ DATASET:
     cleanup       : false                       # ::Bool - Whether to remove all the original dataset, keeping only split format
     num_folds     : 10                          # ::Int - Number of cross-validation folds in which the dataset is split
     num_quantiles : 20                          # ::Int - Number of quantiles of total load active power in which OPF samples are classified
+    separate_unfeasible :
+        active          : false                 # ::Bool - Whether to duplicate slack-active instances with reconstructed unfeasible load setpoints
+        slack_tol       : 1.0e-6                # ::Float64 - Threshold in p.u. to detect active load slack variables
+        unfeasible_ratio: 0.10                  # ::Float64 - Target ratio of unfeasible samples in [0, 1]
+        total_size      : -1                    # ::Int - Optional approximate total number of mapped samples (-1 for unspecified)
 
 PARALLEL:
     cpu_ratio : 50.0                            # ::Float64 - Percentage of CPU threads to use w.r.t. `Sys.CPU_THREADS` count
