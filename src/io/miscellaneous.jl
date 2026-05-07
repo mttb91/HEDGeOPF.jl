@@ -187,13 +187,14 @@ end
 ###############################################################################
 
 """
-    generate_uid(path::String, cleanup::Bool)
+    generate_uid(cleanup::Bool)
 
 Generate unique identifier for AC-OPF instances by sorting them based on
 total load active power, objective value and topology.
 """
-function generate_uid(path::String, cleanup::Bool)
+function generate_uid(cleanup::Bool)
 
+    path = pwd()
     ls = _DF.DataFrame[]
     for file in filter(x -> contains(x, "info"), readdir(path))
         data = _DF.DataFrame(CSV.File(joinpath(path, file)))
