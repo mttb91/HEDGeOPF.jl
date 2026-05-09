@@ -11,7 +11,6 @@ CASE:
 TOPOLOGY:
     k            : 2                            # ::Int64 - Maximum number of branches removed per topology perturbation
     num_topo     : 100                          # ::Int64 - Number of topology perturbations to be generated
-    allow_island : true                         # ::Bool - Whether to allow multiple active connected components due to perturbation
     generation   : true                         # ::Bool - Whether to perturbe generator status alongside topology
 
 SAMPLING:
