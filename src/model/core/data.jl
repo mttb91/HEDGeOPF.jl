@@ -68,62 +68,146 @@ function is_synchronous(network::Dict{String, <:Any})
     return vars_new, mask
 end
 
-"Return the reference bus for a subgraph of model `pm` defined by `buses`, defining it if missing"
-function define_ref_bus(pm::_PM.AbstractPowerModel, buses::Vector{Int}, bus_gen::Vector{Int})
+"Return mask over generators that share the same bus with at least another generator"
+function is_node_shared(pm::_PM.AbstractPowerModel, gen_bus::Vector{Int})
 
+    buses = Int[]
+    for (k, v) in _PM.ref(pm, :bus_gens)
+        if length(v) > 1
+            push!(buses, k)
+        end
+    end
+    sort!(buses)
+    return in.(gen_bus, Ref(buses))
+end
+
+"""
+    define_candidate_ref_buses(pm::_PM.AbstractPowerModel, ids_gen_faulted::Vector{Int} = Int[])
+
+Define candidate reference buses for a PowerModels model `pm` with faulted generators at
+`ids_gen_faulted` as buses that host a single generator with nonzero active and reactive
+power capability, returning a DataFrame indexed by generator with following columns:
+- `index`: generator index
+- `gen_bus`: bus hosting the generator
+- `mask_ref`: boolean mask for buses that meet requirement on power capability
+- `mask_unshared`: boolean mask for generators that do not share the same bus with others
+"""
+function define_candidate_ref_buses(
+    pm::_PM.AbstractPowerModel; ids_gen_faulted::Vector{Int} = Int[]
+)
+    cols = ["index", "gen_bus", "pmin", "pmax", "qmin", "qmax"]
+    ids_gen = sort(collect(_PM.ids(pm, :gen)))
+    ids_mask = findfirst.(isequal.(setdiff(ids_gen, ids_gen_faulted)), Ref(ids_gen))
+    data = get_pm_value(pm, :gen, cols, _DF.DataFrame; mask = ids_mask)
+    # Power capability requirement for reference bus eligibility
+    data.mask_ref = .!iszero.(data.pmax .- data.pmin) .& .!iszero.(data.qmax .- data.qmin)
+    # HACK: filter out candidate reference buses with multiple generators attached
+    data.mask_unshared = .!is_node_shared(pm, data.gen_bus)
+    _DF.select!(data, ["index", "gen_bus", "mask_ref", "mask_unshared"])
+    return data
+end
+
+"""
+    define_ref_bus(pm::_PM.AbstractPowerModel, buses::Vector{Int}, bus_gen_valid::Vector{Int})
+
+Return the reference bus for a subgraph of model `pm` defined by `buses`. If this is missing
+or is no longer valid, this is selected either as first:
+- among the eligible generator buses `bus_gen_valid` that belong to the subgraph, if any;
+- among the remaining buses in the subgraph if no eligible generator is available.
+
+Any logic to define eligible generator buses `bus_gen_valid` must be implemented before calling
+this function.
+"""
+function define_ref_bus(pm::_PM.AbstractPowerModel, buses::Vector{Int}, bus_gen_valid::Vector{Int})
+
+    # Retain only eligible reference buses in subgraph
+    bus_gen = filter(x -> in(x, buses), bus_gen_valid)
+    # Get current ref bus in subgraph
     ref, vars = :bus, ["bus_i", "bus_type"]
     data = get_pm_value(pm, ref, vars, Array{Any, 2}; mask=buses)
-    if all(data[:, 2] .!= 3)
+    bus_ref_old = data[data[:, 2] .=== 3, 1]
 
-        # Select a generator with both active and reactive support as reference bus if possible
-        bus_gen = bus_gen[in.(bus_gen, Ref(buses))]
+    if isempty(bus_ref_old) || !in(first(bus_ref_old), bus_gen)
         if isempty(bus_gen)
             bus_ref = first(buses)
         else
             bus_ref = first(bus_gen)
         end
     else
-        bus_ref = first(data[data[:, 2] .=== 3, 1])
+        bus_ref = first(bus_ref_old)
     end
     return bus_ref
 end
 
-"Update in-place the `ref` dictionary of a PowerModel model `pm` based on `topology` perturbation"
-function update_topology(pm::_PM.AbstractPowerModel, topology::TopologyPerturbation)
+"""
+    update_topology(pm_ref::_PM.AbstractPowerModel, topology::TopologyPerturbation)
+
+Update the `ref` dictionary of a PowerModel model `pm_ref` based on `topology` perturbation,
+mimicking the policy applied in `update_topology!`. In particular:
+- disconnected buses have property `is_connected` set to zero, leaving voltage magnitude bounds unmodified
+- faulted branches have property `br_status` set to zero
+- loads and shunt at disconnected buses have property `status` set to zero
+- generators at disconnected buses have property `gen_status` set to zero
+- faulted generators have their active and reactive power bounds set to zero
+- buses hosting faulted generators are converted from PV to PQ type
+
+## Notes
+
+This is required because `update_topology!` updates directly the `JuMP` optimisation model,
+leaving the `ref` dictionary of the PowerModels model `pm_ref` unaltered with respect to the
+intact reference topology.
+"""
+function update_topology(pm_ref::_PM.AbstractPowerModel, topology::TopologyPerturbation)
 
     t = topology
-    pm = deepcopy(pm)
+    pm = deepcopy(pm_ref)
     ids_gen = sort(collect(_PM.ids(pm, :gen)))
     ids_branch = sort(collect(_PM.ids(pm, :branch)))
-
-    !isempty(t.ids_ref) && set_pm_value!(pm, :bus, ["bus_type"], 3; mask = t.ids_ref)
-    !isempty(t.ids_bus) && set_pm_value!(pm, :bus, ["is_connected"], 0; mask = t.ids_bus)
-    if !isempty(t.ids_gen)
-        ids_mask = findfirst.(isequal.(t.ids_gen), Ref(ids_gen))
-        set_pm_value!(pm, :gen, ["gen_status"], 0; mask = ids_mask)
+    ids_gen_active = setdiff(ids_gen, vcat(t.ids_gen, t.ids_gen_faulted))
+    # Derive reference bus for base topology
+    bus_ref_base = get_pm_value(pm, :bus, ["bus_i", "bus_type"], Array{Any, 2})
+    bus_ref_base = bus_ref_base[bus_ref_base[:, 2] .=== 3, 1]
+    
+    if !isempty(t.ids_branch)
+        ids_mask = findfirst.(isequal.(t.ids_branch), Ref(ids_branch))
+        set_pm_value!(pm, :branch, ["br_status"], 0; mask = ids_mask)
     end
     if !isempty(t.ids_gen_faulted)
         ids_mask = findfirst.(isequal.(t.ids_gen_faulted), Ref(ids_gen))
         set_pm_value!(pm, :gen, ["pmin", "pmax", "qmin", "qmax"], 0.0; mask = ids_mask)
     end
-    if !isempty(t.ids_branch)
-        ids_mask = findfirst.(isequal.(t.ids_branch), Ref(ids_branch))
-        set_pm_value!(pm, :branch, ["br_status"], 0; mask = ids_mask)
-    end
     
-    # Convert PV buses with only faulted/disconnected generation to PQ type
-    ids = sort(vcat(t.ids_gen, t.ids_gen_faulted))
-    if !isempty(ids)
-        bus_pv = vec(get_pm_value(pm, :gen, ["gen_bus"], Array{Any, 2}))
-        ids_mask = findfirst.(isequal.(ids), Ref(ids_gen))
-        bus_pq = setdiff(bus_pv[ids_mask], t.ids_ref)
-        if !isempty(bus_pq)
-            set_pm_value!(pm, :bus, ["bus_type"], 1; mask = bus_pq)
+    # Set bus types
+    set_pm_value!(pm, :bus, ["bus_type"], 1)
+    if !isempty(t.ids_ref)
+        set_pm_value!(pm, :bus, ["bus_type"], 3; mask = t.ids_ref)
+    else
+        if !isempty(bus_ref_base)
+            set_pm_value!(pm, :bus, ["bus_type"], 3; mask = bus_ref_base)
+        else
+            error("No reference bus specified for topology $(t.id).")
         end
     end
+    # Set to PV only connected buses with non faulted generation
+    bus_notpv = unique(vcat(t.ids_ref, t.ids_bus))
+    bus_pv = get_pm_value(pm, :gen, ["gen_bus", "gen_status"], Array{Any, 2}; mask=ids_gen_active)
+    bus_pv = bus_pv[bus_pv[:, 2] .== 1, 1]
+    bus_pv = setdiff(unique(bus_pv), bus_notpv)
+    if !isempty(bus_pv)
+        set_pm_value!(pm, :bus, ["bus_type"], 2; mask=bus_pv)
+    else
+        @warn "No bus of PV type for topology $(t.id)."
+    end
 
-    # Deactivate also loads and shunt connected to isolated nodes
+    # Deactivate de-energized node alongside shunt components connected to them
     if !isempty(t.ids_bus)
+        set_pm_value!(pm, :bus, ["is_connected"], 0; mask = t.ids_bus)
+
+        if !isempty(t.ids_gen)
+            ids_mask = findfirst.(isequal.(t.ids_gen), Ref(ids_gen))
+            set_pm_value!(pm, :gen, ["gen_status"], 0; mask = ids_mask)
+        end
+
         for key in ["load", "shunt"]
             if isempty(_PM.ref(pm, Symbol(key)))
                 continue
@@ -162,10 +246,17 @@ Update in-place the reference bus(es) of model `pm` by:
 - unfixing the voltage angle for the references buses that are not in `ids_fixed`
 - fixing to zero the voltage angle for the new reference buses among `ids_fixed`
 
+## Notes
+
+Providing an empty `ids_fixed` vector will result in no changes being applied neither at
+fixing nor unfixing reference buses.
 """
 function fix_theta_ref!(pm::_PM.AbstractPowerModel, ids_fixed::Vector{Int};
     nw::Int=_PM.nw_id_default
 )
+    if isempty(ids_fixed)
+        return nothing
+    end
     var = :va
     ref = _PM.var(pm, nw, var)
     ids = sort(first(ref.axes))
@@ -274,9 +365,9 @@ function update_topology!(pm::_PM.AbstractPowerModel, ids_branch::Vector{Int}, i
 
     is_changed = update_branch_status!(pm, ids_branch)
     if is_changed
-        fix_theta_ref!(pm, ids_ref)
         fix_to_zero!(pm, ids_bus, :bus, :vm, ["vmin", "vmax"])
     end
+    fix_theta_ref!(pm, ids_ref)
     fix_to_zero!(pm, ids_gen, :gen, :pg, ["pmin", "pmax"])
     fix_to_zero!(pm, ids_gen, :gen, :qg, ["qmin", "qmax"])
 
