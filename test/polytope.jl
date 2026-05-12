@@ -41,7 +41,7 @@ end
 @testset "test custom polytope function" begin
 
     setup = deepcopy(SETUP)
-    net = instantiate_network(setup)
+    net = deepcopy(DATA["5_pjm"]["net"])
     nt = to_namedtuple(setup)
     pm = instantiate_model(net, "ACP", nt)
     gen = get_pm_value(pm, :gen, ["pmin", "pmax"], _DF.DataFrame)

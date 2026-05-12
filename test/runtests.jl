@@ -9,13 +9,20 @@ import HEDGeOPF: _isempty
 
 @testset "HEDGeOPF" begin
 
+    _PM.silence()
+
     global SETUP = include("settings.jl")
 
     # OPF model
 
-    include("data.jl")
+    global DATA = include("network.jl")
+    include("model.jl")
     include("opf.jl")
     include("solution.jl")
+
+    # Graph
+
+    include("graph.jl")
 
     # Polytope
 
@@ -25,5 +32,6 @@ import HEDGeOPF: _isempty
     # Sampling
 
     include("parallel.jl")
+    include("sampling.jl")
     
 end
