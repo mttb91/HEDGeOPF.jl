@@ -2,7 +2,7 @@
 "Identify the largest and minor connected components in graph defined by `edges`, with edges at `ids` being removed"
 function connected_components(edges::Matrix{Int}, ids::Vector{Int}, n::Int)
 
-    ds = _DS.IntDisjointSets(n)
+    ds = _DS.IntDisjointSet{Int}(n)
 
     ids = Set(ids)
     for i in axes(edges, 1)

@@ -74,7 +74,7 @@ function calc_connection_indices(pm::_PM.AbstractPowerModel; label::Symbol = :_i
     bus_to_idx = bus .=> 1:length(bus)
     
     data = Dict{Symbol, _DF.DataFrame}()
-    for key in keys(filter(p->isa(p.second, Dict{Int, Any}) && !isempty(p.second), _PM.ref(model)))
+    for key in keys(filter(p->isa(p.second, Dict{Int, Any}) && !isempty(p.second), _PM.ref(pm)))
         vars = get_pm_key(pm, key)
         data[key] = get_pm_value(pm, key, vars, _DF.DataFrame)
     end
@@ -89,11 +89,14 @@ end
 
 function calc_admittance_matrices(pm::_PM.AbstractPowerModel, indices::Dict{Symbol, Matrix{Int}})
     n_bus = length(_PM.ref(pm, :bus))
-    vars = ["b_fr", "b_to", "br_r", "br_x", "g_fr", "g_to", "tap", "shift"]
-    mask = findall(Bool.(vec(get_pm_value(pm, :branch, ["br_status"], Array{Any, 2}))))
+    vars = ["b_fr", "b_to", "br_r", "br_x", "g_fr", "g_to", "tap", "shift", "br_status"]
 
-    shunt_data = get_pm_value(pm, :shunt, ["gs", "bs"], _DF.DataFrame)
-    branch_data = get_pm_value(pm, :branch, vars, _DF.DataFrame; mask = mask)
+    if !isempty(_PM.ref(pm, :shunt))
+        shunt_data = get_pm_value(pm, :shunt, ["gs", "bs"], _DF.DataFrame)
+    else
+        shunt_data = _DF.DataFrame()
+    end
+    branch_data = get_pm_value(pm, :branch, vars, _DF.DataFrame)
     return _calc_admittance_matrices(n_bus, branch_data, shunt_data, indices)
 end
 
