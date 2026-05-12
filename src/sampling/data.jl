@@ -4,46 +4,41 @@
 ###############################################################################
 
 """
-    perturbe_topology(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, setting::NamedTuple;
-        ids_gen_faulted::Vector{Int} = Vector{Int}()
+    perturb_topology(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, k::Int;
+        ids_bus_ref_valid::Vector{Int} = Vector{Int}()
     )
 
-Generate a single topology perturbation by removing up to `k` branches, defining and recording
-a reference bus for every resulting island. If the island has no self-balancing capabilities 
-(i.e. either generation or consumption is missing), the indices of isolated buses and generators
-are recorded as well. 
+Generate a single topology perturbation by removing up to `k` branches at random and by
+keeping only perturbations that result in a single connected component. Returns:
+- `ids_branch`: the ids of removed branches
+- `ids_bus`: the ids of disconnected buses (empty in case islanding is not modelled)
+- `ids_ref`: the ids of the reference buses, one for each connected component
+- `ids_gen`: the ids of disconnected generators (empty in case islanding is not modelled)
 """
-function perturbe_topology(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, setting::NamedTuple;
-    ids_gen_faulted::Vector{Int} = Vector{Int}()
+function perturb_topology(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, k::Int;
+    ids_bus_ref_valid::Vector{Int} = Vector{Int}()
 )
 
-    ks = 1:setting.TOPOLOGY.k
+    ks = 1:k
     nbus = length(_PM.ref(pm, :bus))
     edges = get_pm_value(pm, :branch, ["index", "f_bus", "t_bus"], Array{Any, 2})
     dims = 1:size(edges, 1)
 
-    # Identify candidate reference buses among those with installed active generation
-    cols = ["index", "gen_bus", "pmin", "pmax", "qmin", "qmax"]
-    ids_gen = sort(collect(_PM.ids(pm, :gen)))
-    ids_mask = findfirst.(isequal.(setdiff(ids_gen, ids_gen_faulted)), Ref(ids_gen))
-    data = get_pm_value(pm, :gen, cols, _DF.DataFrame; mask = ids_mask)
-    data.mask_ref = .!iszero.(data.pmax .- data.pmin) .& .!iszero(data.qmax .- data.qmin)
-    _DF.select!(data, ["index", "gen_bus", "mask_ref"])
-
     ids_branch = Vector{Int}()
     ids_ref, ids_bus, ids_gen = Vector{Int}(), Vector{Int}(), Vector{Int}()
-    while true
-        # Generate ids of branches to be removed
-        n = _RND.rand(rng, ks)
-        ids = sort(_RND.shuffle(rng, dims)[1:n])
-        ids_branch = edges[ids, 1]
-        # Get largest and all minor connected components
-        lcc, ccs = connected_components(edges[:, end-1:end], ids, nbus)
+    if !iszero(k)
+        while true
+            # Generate ids of branches to be removed
+            n = _RND.rand(rng, ks)
+            ids = sort(_RND.shuffle(rng, dims)[1:n])
+            ids_branch = edges[ids, 1]
+            # Get largest and all minor connected components
+            lcc, ccs = connected_components(edges[:, end-1:end], ids, nbus)
 
-        if isempty(ccs)
-            bus_gen_ref = data.gen_bus[data.mask_ref]
-            push!(ids_ref, define_ref_bus(pm, lcc, bus_gen_ref))
-            break
+            if isempty(ccs)
+                push!(ids_ref, define_ref_bus(pm, lcc, ids_bus_ref_valid))
+                break
+            end
         end
     end
 
@@ -55,18 +50,46 @@ function perturbe_topology(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, se
     )
 end
 
-"Generate a single generation perturbation by dropping at most one generator"
-function perturbe_generation(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG)
+"""
+    perturb_generation(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, k::Int)
 
-    ids_gen = collect(_PM.ids(pm, :gen))
-    n = _RND.rand(rng, 0:1)
-    if !iszero(n)
-        ids = _RND.shuffle(rng, ids_gen)[1:n]
-        sort!(ids)
-    else
+Generate a single generation perturbation by dropping at most `k` generators at random as
+long as at least an eligible reference generator candidate is retained in the system `pm`.
+Return:
+- `ids_gen_faulted`: the ids of faulted generators
+- `ids_bus_ref_valid`: the ids of remaining eligible reference bus candidates
+"""
+function perturb_generation(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, k::Int)
+
+    # Define candidate reference buses for the given model
+    data = define_candidate_ref_buses(pm)
+    ids_gen = data.index
+    ids_gen_valid = data.index[data.mask_ref .& data.mask_unshared]
+    ids_bus_ref_valid = data.gen_bus[ids_gen_valid]
+
+    if iszero(k)
         ids = Vector{Int}()
+    else
+        ks = 0:k
+        while true
+            # Generate ids of generator to be removed
+            n = _RND.rand(rng, ks)
+            if !iszero(n)
+                ids = _RND.shuffle(rng, ids_gen)[1:n]
+                sort!(ids)
+            else
+                ids = Vector{Int}()
+            end
+            # Keep pertrubation only if eligible reference generators are retained
+            if !isempty(setdiff(ids_gen_valid, ids))
+                break
+            end
+        end
     end
-    return ids
+    return (
+        ids_gen_faulted = ids,
+        ids_bus_ref_valid = setdiff(ids_bus_ref_valid, data.gen_bus[ids])
+    )
 end
 
 "Wrapper generator for combined topology perturbations of different types"
@@ -83,29 +106,27 @@ function Base.iterate(gen::TopologyPerturbationGenerator, state::Nothing = nothi
             pg_tot_bounds = limits
         )
     else
-        if setting.TOPOLOGY.generation
-            ids_gen_faulted = perturbe_generation(pm, gen.rng)
-        else
-            ids_gen_faulted = Vector{Int}()
-        end
-        ids = perturbe_topology(pm, gen.rng, setting; ids_gen_faulted = ids_gen_faulted)
+        p_gen = perturb_generation(pm, gen.rng, setting.TOPOLOGY.k_gen)
+        p_branch = perturb_topology(pm, gen.rng, setting.TOPOLOGY.k_branch;
+            ids_bus_ref_valid = p_gen.ids_bus_ref_valid
+        )
 
         # Add here additional perturbations
 
         # Compute limits in total generator active power for given topology
         ids_gen = sort(collect(_PM.ids(pm, :gen)))
-        ids_gen_remove = Set(sort(vcat(ids.ids_gen, ids_gen_faulted)))
+        ids_gen_remove = Set(sort(vcat(p_branch.ids_gen, p_gen.ids_gen_faulted)))
         limits = get_pm_value(pm, :gen, ["pmin", "pmax"], Array{Any, 2};
             mask = findall(x -> !in(x, ids_gen_remove), ids_gen)
         )
 
         perturbation = TopologyPerturbation(
             gen.state,
-            ids.ids_branch,
-            ids.ids_bus,
-            ids.ids_ref,
-            ids.ids_gen,
-            ids_gen_faulted,
+            p_branch.ids_branch,
+            p_branch.ids_bus,
+            p_branch.ids_ref,
+            p_branch.ids_gen,
+            p_gen.ids_gen_faulted,
             vec(sum(limits, dims=1))
         )
     end
@@ -114,12 +135,12 @@ function Base.iterate(gen::TopologyPerturbationGenerator, state::Nothing = nothi
 end
 
 """
-    generate_topologies(generator::TopologyPerturbationGenerator, dim::Int)
+    generate_topologies(generator::TopologyPerturbationGenerator, num::Int)
 
-Generate topology perturbations, returning for each a number of input samples equal to `dim`
-and the `mapping` grouping topologies by bounds in total load active power.
+Generate `num` topology perturbations with generator `generator`, returning, alongside the
+list of topologies, the `mapping` grouping topologies by bounds in total load active power.
 """
-function generate_topologies(generator::TopologyPerturbationGenerator, dim::Int)
+function generate_topologies(generator::TopologyPerturbationGenerator, num::Int)
 
     mapping = Dict{Vector{Float64}, Vector{Int}}()
     topologies = Vector{TopologyPerturbation}()
@@ -131,7 +152,7 @@ function generate_topologies(generator::TopologyPerturbationGenerator, dim::Int)
         else
             push!(mapping[key], t.id)
         end
-        if i >= dim
+        if i >= num
             break
         end
     end
