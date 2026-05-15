@@ -293,5 +293,6 @@ function convert_dataset(path::String;
     map = reduce(vcat, map)
     _write_parquet!(db, map, joinpath(dst, "map.parquet"))
     _DDB.DBInterface.close(db)
+    _copy_topologies(dst)
     return nothing
 end
