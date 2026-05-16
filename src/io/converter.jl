@@ -139,6 +139,38 @@ function _get_dims(
     return dims
 end
 
+function _chunk_files(n_samples::Union{Int, Nothing}, num_folds::Int)
+
+    groups = filter(x -> startswith(x, "group_"), readdir())
+    sort!(groups, by = x -> parse(Int, last(split(x, "_"))))
+    if isempty(groups)
+        grid = first(split(setting.CASE.grid, "."))
+        msg = replace("""
+        No OPFDataset group folders found in the dataset path $(pwd()). You first need to
+        separately download and unzip every group of OPFDataset for $(grid) (e.g., by using
+        the `OPFDataset` dataset in Pytorch Geometric) and copy them in the folder at path
+        $(pwd()) before running the conversion.
+        """, "\n" => " ")
+        error(msg)
+    end
+
+    files = Vector{Tuple{String, String}}()
+    for group in groups
+        chunk = first.(split.(filter(f -> startswith(f, "example_"), readdir(group)), "."))
+        append!(files, [(group, f) for f in chunk])
+    end
+    sort!(files, by = x -> parse(Int, last(split(last(x), "_"))))
+
+    if !isnothing(n_samples)
+        files = files[1:n_samples]
+        msg = "Downsampling OPFData dataset by retaining only the first $(n_samples) samples."
+        @warn msg
+    else
+        n_samples = length(files)
+    end
+    return Base.Iterators.partition(files, floor(Int, n_samples / num_folds))
+end
+
 function _init_store(
     dims::Dict{Symbol, Int};
     mapping::Dict{Symbol, Tuple{Vector, Vector{Symbol}}} = DEFAULT_MAPPING
@@ -197,27 +229,28 @@ function _add_sample!(
     return nothing
 end
 
-function process_group(
-    paths::NamedTuple{(:src, :dst), Tuple{String, String}},
+function process_fold(
+    fold::Int,
+    files::AbstractVector{Tuple{String, String}},
     index::Vector{Int},
     dims::Dict{Symbol, Int},
+    dst::String,
     db::_DDB.DB
 )
 
-    files = first.(split.(filter(f -> startswith(f, "example_"), readdir(paths.src)), "."))
-    uids = parse.(Int, last.(split.(files, "_")))
+    uids = parse.(Int, last.(split.(last.(files), "_")))
     uid_min = minimum(uids)
     @assert isequal(sort(uids), collect(uid_min:uid_min + length(files) - 1))
 
     dims[:samples] = length(files)
     store = _init_store(dims)
-    store[:metadata][:fold] .= Float32(parse(Int, split(basename(paths.src), "_")[end]) + 1)
+    store[:metadata][:fold] .= Float32(fold)
 
     Base.Threads.@threads for i in eachindex(files)
 
         col = uids[i] - uid_min + 1
         store[:metadata][:uid][col, :] .= Float32(uids[i] + 1)
-        sample = _read_json(joinpath(paths.src, files[i] * ".json"));
+        sample = _read_json(joinpath(files[i]...) * ".json")
         _add_sample!(store, sample, col, index)
     end
 
@@ -232,22 +265,24 @@ function process_group(
             array = _DF.DataFrame(permutedims(pop!(value, var)), Symbol.(1:dims[comp]))
             _DF.insertcols!(array, 1, :uid => map.uid)
 
-            _write_parquet!(db, array, joinpath(paths.dst, String(comp), name))
+            _write_parquet!(db, array, joinpath(dst, String(comp), name))
         end
     end
     return map
 end
 
 function convert_dataset(path::String;
+    n_samples::Union{Int, Nothing} = nothing,
     filename::String = "settings.yaml",
     dst::Union{String, Nothing} = nothing
 )
-
+    if Base.Threads.nthreads() < 2
+        msg = "It is recommended to enable multi-threading to convert an `OPFData` dataset."
+        @warn msg
+    end
     cd(path)
 
-    setting = read_settings(filename);
-    network = instantiate_network(setting);
-    setting = to_namedtuple(setting);
+    setting = to_namedtuple(read_settings(filename));
     cd(joinpath(
         pwd(),
         setting.PATH.output,
@@ -264,31 +299,19 @@ function convert_dataset(path::String;
         msg = "The destination folder must be unique. Rename the existing one to avoid overwriting."
         throw(DomainError(dst, msg))
     end
-
-    groups = filter(x -> startswith(x, "group_"), readdir())
-    if isempty(groups)
-        grid = first(split(setting.CASE.grid, "."))
-        msg = replace("""
-        No OPFDataset group folders found in the dataset path $(pwd()). You first need to
-        separately download and unzip every group of OPFDataset for $(grid) (e.g., by using
-        the `OPFDataset` dataset in Pytorch Geometric) and copy them in the folder at path
-        $(pwd()) before running the conversion.
-        """, "\n" => " ")
-        error(msg)
-    end
+    @info "Splitting the `OPFData` dataset into $(setting.DATASET.num_folds) folds."
 
     db = _DDB.DB()
     map = _DF.DataFrame[]
     dims = Dict{Symbol, Int}()
     index = Vector{Int}()
-    for (i, group) in enumerate(groups)
-        paths = (src = joinpath(pwd(), group), dst = dst)
+    for (i, chunk) in enumerate(_chunk_files(n_samples, setting.DATASET.num_folds))
         if i == 1
-            example = _read_json(joinpath(paths.src, first(readdir(paths.src))))
+            example = _read_json(joinpath(first(chunk)...) * ".json")
             index = _reorder_index(example)
             dims = _get_dims(example)
         end
-        push!(map, process_group(paths, index, dims, db))
+        push!(map, process_fold(i, chunk, index, dims, dst, db))
     end
     map = reduce(vcat, map)
     _write_parquet!(db, map, joinpath(dst, "map.parquet"))
