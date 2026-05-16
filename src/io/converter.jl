@@ -62,6 +62,7 @@ function _extract_info(rows::CSV.Rows)
 end
 
 function convert_dataset(path::String;
+    n_samples::Union{Int, Nothing} = nothing,
     filename::String = "settings.yaml",
     dst::Union{String, Nothing} = nothing
 )
@@ -107,9 +108,16 @@ function convert_dataset(path::String;
     end
     path_src = joinpath(pwd(), first(files))
 
-    rows = CSV.Rows(path_src; header=1, types=Float32, reusebuffer=false)
+    if isnothing(n_samples)
+        rows = CSV.Rows(path_src; header=1, types=Float32, reusebuffer=false)
+    else
+        rows = CSV.Rows(path_src; header=1, limit=n_samples, types=Float32, reusebuffer=false)
+        msg = "Downsampling OPFLearn dataset by retaining only the first $(n_samples) samples."
+        @warn msg
+    end
     n_sample, cols, map_column = _extract_info(rows)
     chuck_size = floor(Int, n_sample / setting.DATASET.num_folds)
+    @info "Splitting OPFLearn dataset into $(setting.DATASET.num_folds) folds."
 
     c = 0
     db = _DDB.DB()
