@@ -66,8 +66,25 @@
                 var => get_pm_value(sol, comp, [var], Array{Any, 2})
                 for (var, comp) in zip(["va", "vm", "pg", "qg"], ["bus", "bus", "gen", "gen"])
             )
-
             pg_bounds = vec(sum(get_pm_value(pm, :gen, ["pmin", "pmax"], Array{Any, 2}), dims=1))
+            
+            @testset "bus type consistency with unmodified reference bus" begin
+
+                t = TopologyPerturbation(
+                    id = 1,
+                    ids_gen_faulted = [2],
+                    pg_tot_bounds = pg_bounds
+                )
+                pm_new = update_topology(pm, t);
+                bus_type = vec(get_pm_value(pm_new, :bus, ["bus_type"], Array{Any, 2}))
+
+                @test isequal(findall(x -> x == 3, bus_type), [1])
+                # All generators still active except gen 2
+                @test isequal(findall(x -> x == 2, bus_type), [3, 6, 8])
+                # All remaining bus are PQ-type
+                @test isequal(findall(x -> x == 1, bus_type), setdiff(buses, [1, 3, 6, 8]))
+            end
+
             t = TopologyPerturbation(
                 id = 1,
                 ids_branch = [8, 9, 10],
@@ -79,7 +96,7 @@
             )
             pm_new = update_topology(pm, t);
 
-            @testset "bus type consistency" begin
+            @testset "bus type consistency with topology perturbation" begin
                 bus_type = vec(get_pm_value(pm_new, :bus, ["bus_type"], Array{Any, 2}))
 
                 @test isequal(findall(x -> x == 3, bus_type), t.ids_ref)
@@ -89,7 +106,7 @@
                 @test isequal(findall(x -> x == 1, bus_type), setdiff(buses, [t.ids_ref; 3]))
             end
 
-            @testset "policy equivalence" begin
+            @testset "policy equivalence under topology perturbation" begin
                 # Modify voltage magnitude bounds of disconnected buses
                 mask = vec(get_pm_value(pm_new, :bus, ["is_connected"], Array{Any, 2}))
                 set_pm_value!(pm_new, :bus, ["vmin", "vmax"], 0.0; mask = findall(x -> x == 0, mask))

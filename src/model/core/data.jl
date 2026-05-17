@@ -181,15 +181,16 @@ function update_topology(pm_ref::_PM.AbstractPowerModel, topology::TopologyPertu
     set_pm_value!(pm, :bus, ["bus_type"], 1)
     if !isempty(t.ids_ref)
         set_pm_value!(pm, :bus, ["bus_type"], 3; mask = t.ids_ref)
+        bus_notpv = unique(vcat(t.ids_ref, t.ids_bus))
     else
         if !isempty(bus_ref_base)
             set_pm_value!(pm, :bus, ["bus_type"], 3; mask = bus_ref_base)
+            bus_notpv = unique(vcat(bus_ref_base, t.ids_bus))
         else
             error("No reference bus specified for topology $(t.id).")
         end
     end
     # Set to PV only connected buses with non faulted generation
-    bus_notpv = unique(vcat(t.ids_ref, t.ids_bus))
     bus_pv = get_pm_value(pm, :gen, ["gen_bus", "gen_status"], Array{Any, 2}; mask=ids_gen_active)
     bus_pv = bus_pv[bus_pv[:, 2] .== 1, 1]
     bus_pv = setdiff(unique(bus_pv), bus_notpv)
