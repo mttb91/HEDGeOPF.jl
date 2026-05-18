@@ -64,8 +64,9 @@ function perturb_generation(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, k
     # Define candidate reference buses for the given model
     data = define_candidate_ref_buses(pm)
     ids_gen = data.index
-    ids_gen_valid = data.index[data.mask_ref .& data.mask_unshared]
-    ids_bus_ref_valid = data.gen_bus[ids_gen_valid]
+    mask_valid = data.mask_ref .& data.mask_unshared
+    ids_gen_valid = data.index[mask_valid]
+    ids_bus_ref_valid = data.gen_bus[mask_valid]
 
     if iszero(k)
         ids = Vector{Int}()
@@ -86,9 +87,10 @@ function perturb_generation(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, k
             end
         end
     end
+    ids_pos = findall(in(ids), data.index)
     return (
         ids_gen_faulted = ids,
-        ids_bus_ref_valid = setdiff(ids_bus_ref_valid, data.gen_bus[ids])
+        ids_bus_ref_valid = setdiff(ids_bus_ref_valid, data.gen_bus[ids_pos])
     )
 end
 

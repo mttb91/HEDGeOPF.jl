@@ -164,6 +164,7 @@ function update_topology(pm_ref::_PM.AbstractPowerModel, topology::TopologyPertu
     ids_gen = sort(collect(_PM.ids(pm, :gen)))
     ids_branch = sort(collect(_PM.ids(pm, :branch)))
     ids_gen_active = setdiff(ids_gen, vcat(t.ids_gen, t.ids_gen_faulted))
+    ids_mask_active = findall(in(ids_gen_active), ids_gen)
     # Derive reference bus for base topology
     bus_ref_base = get_pm_value(pm, :bus, ["bus_i", "bus_type"], Array{Any, 2})
     bus_ref_base = bus_ref_base[bus_ref_base[:, 2] .=== 3, 1]
@@ -191,7 +192,7 @@ function update_topology(pm_ref::_PM.AbstractPowerModel, topology::TopologyPertu
         end
     end
     # Set to PV only connected buses with non faulted generation
-    bus_pv = get_pm_value(pm, :gen, ["gen_bus", "gen_status"], Array{Any, 2}; mask=ids_gen_active)
+    bus_pv = get_pm_value(pm, :gen, ["gen_bus", "gen_status"], Array{Any, 2}; mask=ids_mask_active)
     bus_pv = bus_pv[bus_pv[:, 2] .== 1, 1]
     bus_pv = setdiff(unique(bus_pv), bus_notpv)
     if !isempty(bus_pv)
