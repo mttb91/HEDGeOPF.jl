@@ -14,8 +14,10 @@ import DataStructures as _DS
 import DuckDB as _DDB
 import Serialization: serialize, deserialize
 import ZipArchives as _ZA
+import GZip as _GZ
 import CSV
 import YAML
+import HDF5
 import RCall
 
 import Distributed as _DC
@@ -57,6 +59,7 @@ include("graph/base.jl")
 
 ## I/O
 
+include("io/converter.jl")
 include("io/miscellaneous.jl")
 include("io/output.jl")
 include("io/results.jl")
