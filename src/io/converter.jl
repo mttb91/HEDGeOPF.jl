@@ -105,6 +105,7 @@ end
 
 
 function convert_dataset(path::String;
+    folder::String = "train",
     n_samples::Union{Int, Nothing} = nothing,
     filename::String = "settings.yaml",
     dst::Union{String, Nothing} = nothing
@@ -112,7 +113,16 @@ function convert_dataset(path::String;
 
     cd(path)
 
-    setting = to_namedtuple(read_settings(filename));
+    setting = read_settings(filename);
+    if folder == "train"
+        value = isnothing(n_samples) ? setting["DATASET"]["num_samples"] : n_samples
+    elseif folder == "test"
+        value = nothing
+    else
+        error("Invalid folder name: $folder. Expected 'train' or 'test'.")
+    end
+    setting["DATASET"]["num_samples"] = value
+    setting = to_namedtuple(setting)
     cd(joinpath(
         pwd(),
         setting.PATH.output,
@@ -131,7 +141,7 @@ function convert_dataset(path::String;
     end
 
     graph = _read_graph()
-    files = filter(x -> startswith(x, "input"), readdir("train"))
+    files = filter(x -> startswith(x, "input"), readdir(folder))
     if isempty(files)
         grid = first(split(setting.CASE.grid, "."))
         msg = replace("""
@@ -141,17 +151,10 @@ function convert_dataset(path::String;
         """, "\n" => " ")
         error(msg)
     end
-    path_src = joinpath(pwd(), "train")
+    path_src = joinpath(pwd(), folder)
 
-    rng = _RND.MersenneTwister(setting.CASE.baseseed)
     map = build_map(path_src)
-    folds = total_load_active_power_split(
-        map,
-        rng,
-        setting.DATASET.num_folds,
-        setting.DATASET.num_quantiles
-    )
-    _DF.insertcols!(map, 2, :fold => folds)
+    generate_cv_folds!(map, setting)
     @info "Splitting PGLearn dataset into $(setting.DATASET.num_folds) folds."
 
     db = _DDB.DB()
