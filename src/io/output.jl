@@ -95,9 +95,22 @@ function _combine_cases(
         )
         for fold in sort(collect(keys(cases[worker])))
             map = cases[worker][fold]
+            if !all(1 .<= map.case .<= size(df, 1))
+                msg = (
+                    "Invalid case indices while combining variable $(var) in component $(component): " *
+                    "worker $(worker), fold $(fold), available rows $(size(df, 1))."
+                )
+                error(msg)
+            end
             chunk = df[map.case, :]
             _DF.insertcols!(chunk, 1, :uid => map.uid)
             push!(data[fold], chunk)
+        end
+    end
+    for fold in 1:n_fold
+        if isempty(data[fold])
+            msg = "Cannot combine variable $(var) in component $(component): fold $(fold) has no data."
+            error(msg)
         end
     end
     return Dict(fold => reduce(_DF.vcat, data[fold]) for fold in 1:n_fold)
@@ -125,7 +138,9 @@ function generate_split(setting::NamedTuple; dst::Union{String, Nothing} = nothi
         msg = "The destination folder must be unique. Rename the existing one to avoid overwriting."
         throw(DomainError(dst, msg))
     end
-    @assert isfile("map.csv") "The file map.csv does not exist in $(pwd()). Run `generate_uid` first."
+    if !isfile("map.csv")
+        error("The file map.csv does not exist in $(pwd()). Run `generate_uid` first.")
+    end
     # Generate CV folds assignment for each sample in the map
     map = _DF.DataFrame(CSV.File("map.csv"))
     generate_cv_folds!(map, setting)
@@ -136,15 +151,18 @@ function generate_split(setting::NamedTuple; dst::Union{String, Nothing} = nothi
 
     # Group cases by fold and save them in parquet format per variable
     db = _DDB.DB()
-    _write_parquet!(db, map, joinpath(dst, "map.parquet"))
-    for (component, vars) in map_vars
-        for var in vars
-            for (fold, data) in _combine_cases(var, component, map_cases, setting.DATASET.num_folds)
-                _write_parquet!(db, data, joinpath(dst, component, "$(var)-$(fold).parquet"))
+    try
+        _write_parquet!(db, map, joinpath(dst, "map.parquet"))
+        for (component, vars) in map_vars
+            for var in vars
+                for (fold, data) in _combine_cases(var, component, map_cases, setting.DATASET.num_folds)
+                    _write_parquet!(db, data, joinpath(dst, component, "$(var)-$(fold).parquet"))
+                end
             end
         end
+    finally
+        _DDB.DBInterface.close(db)
     end
-     _DDB.DBInterface.close(db)
     
     _copy_topologies(dst)
     _cleanup(collect(keys(map_vars)), setting.DATASET.cleanup)
