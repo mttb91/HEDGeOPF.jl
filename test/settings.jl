@@ -11,8 +11,9 @@
     @testset "Valid configuration file" begin
 
         @test isa(setup, Dict{String, Any})
-        @test all(haskey.(Ref(setup), ["CASE", "MODEL", "PARALLEL", "PATH", "SAMPLING", "SOLVER"]))
-        @test all(haskey.(Ref(setup["CASE"]), ["append", "baseseed", "grid", "name", "num_batches", "num_items", "num_samples", "uid"]))
+        @test all(haskey.(Ref(setup), ["CASE", "DATASET", "MODEL", "PARALLEL", "PATH", "SAMPLING", "SOLVER"]))
+        @test all(haskey.(Ref(setup["CASE"]), ["append", "baseseed", "grid", "name", "num_batches", "num_items", "num_samples"]))
+        @test all(haskey.(Ref(setup["DATASET"]), ["cleanup", "name", "num_folds", "num_quantiles", "num_samples"]))
         @test all(haskey.(Ref(setup["MODEL"]), ["duals", "voll"]))
         @test all(haskey.(Ref(setup["PARALLEL"]), ["cpu_ratio"]))
         @test all(haskey.(Ref(setup["PATH"]), ["input", "output"]))
