@@ -1,28 +1,25 @@
 
 function _build_opf_slack(pm::_PM.AbstractPowerModel)
 
-    _PM.variable_bus_voltage(pm)
     _PM.variable_gen_power(pm)
     _PM.variable_branch_power(pm)
     _PM.variable_dcline_power(pm)    
 
+    variable_bus_voltage(pm)
     variable_load_power(pm)
+    parameter_branch_status(pm)
 
     objective_min_fuel_and_slack_cost(pm)
 
     _PM.constraint_model_voltage(pm)
-
-    for i in _PM.ids(pm, :ref_buses)
-        _PM.constraint_theta_ref(pm, i)
-    end
 
     for i in _PM.ids(pm, :bus)
         constraint_power_balance_slack(pm, i)
     end
 
     for i in _PM.ids(pm, :branch)
-        _PM.constraint_ohms_yt_from(pm, i)
-        _PM.constraint_ohms_yt_to(pm, i)
+        constraint_ohms_yt_from(pm, i)
+        constraint_ohms_yt_to(pm, i)
 
         _PM.constraint_voltage_angle_difference(pm, i)
     end

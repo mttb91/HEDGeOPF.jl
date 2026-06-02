@@ -37,15 +37,22 @@ function _mkdir(path::String)
     return nothing
 end
 
-"Export a dictionary of DataFrames to Excel naming the sheets by the sorted dictionary keys."
-function _to_xlsx(data::Dict{<:Any, _DF.DataFrame}, filepath::String)
+"Export a dictionary of DataFrame to zip folder of CSV files"
+function _to_zip(data::Dict{<:Any, _DF.DataFrame}, path::String)
 
-    # Save static input information
-    XLSX.openxlsx(filepath, mode="w") do xf
-        for (i, key) in enumerate(sort!(collect(keys(data))))
+    _mkpath(dirname(path))
 
-            i == 1 ? XLSX.rename!(xf[i], String(key)) : XLSX.addsheet!(xf, String(key))
-            XLSX.writetable!(xf[i], data[key])
+    _ZA.ZipWriter(path) do w
+        for key in sort(collect(keys(data)))
+
+            _ZA.zip_newfile(w, "$key.csv"; compress=true)
+            io = IOBuffer()
+            try
+                CSV.write(io, data[key])
+                write(w, take!(io))
+            finally
+                close(io)
+            end
         end
     end
 end
@@ -115,36 +122,62 @@ end
 # I/O Power system
 ###############################################################################
 
-"Export graph model based on PowerModels network in XLSX format"
-function export_graph(model::_PM.AbstractPowerModel, config::String; filename::String = "graph.xlsx")
+"Extract data in COO from CSC matrix and save information to Dataframe"
+function extract_coo_data(data::SparseMatrixCSC{<:Number, Int64})
 
-    path = joinpath(pwd(), config)
-    
+    values = data.nzval
+    colptr = data.colptr
+    colidx = vcat([fill(j, d) for (j, d) in enumerate(diff(colptr))]...)
+    if all(isreal.(values))
+        ntp = (rows = data.rowval, cols = colidx, re = real.(values))
+    else
+        ntp = (rows = data.rowval, cols = colidx, re = real.(values), im = imag.(values))
+    end
+    return _DF.DataFrame(ntp)
+end
+
+"Export graph model based on PowerModels network in XLSX format"
+function export_graph(model::_PM.AbstractPowerModel, topology::TopologyPerturbation)
+
+    path = joinpath(pwd(), "graph")
+    _mkdir(path)
+
+    # Update ref dictionary based on topology perturbation
+    model = update_topology(model, topology)
+
     data = Dict{Symbol, _DF.DataFrame}()
-    for element in Symbol.(["bus", "branch", "load", "shunt", "gen"])
+    elements = [:bus, :branch, :load, :shunt, :gen]
+    for element in elements
         # Extract all features of each component table
         if !isempty(_PM.ref(model, element))
             vars = get_pm_key(model, element)
-            filter!(x -> !in(x, ["index", "source_id"]), vars)
+            filter!(x -> !in(x, ["source_id"]), vars)
             data[element] = get_pm_value(model, element, sort!(vars), _DF.DataFrame)
         end
     end
 
-    element = :gen
-    vars = [:cost, :ncost]
+    element, vars = :gen, [:cost, :ncost]
     # Unfold cost vector into components
     _DF.select!(data[element], _DF.Not(vars),
         vars => _DF.ByRow((x, y) -> vcat(repeat([0.0], 3-y), x)) => [:c2, :c1, :c0]
     )
     _DF.select!(data[element], sort(names(data[element])))
-    # Identify synchronous condensers (if any)
-    ids = findall(x -> x.pmax - x.pmin .== 0, eachrow(data[element]))
-    if !isempty(ids)
-        data[:sync] = data[element][ids, [:gen_bus]]
+
+    # Add admittance matrices based on continuous bus mapping
+    indices = calc_connection_indices(data)
+    Y = calc_admittance_matrices(data, indices)
+    for (key, value) in zip(keys(Y), Y)
+        data[Symbol("_$key")] = extract_coo_data(value)
+    end
+    # Add susceptance matrices for Fast Decoupled Power Flow
+    B = calc_susceptance_matrices(data, indices)
+    for (key, value) in zip(keys(B), B)
+        data[Symbol("_$key")] = extract_coo_data(value)
     end
 
-    # Save graph data to xlsx
-    ∉(filename, readdir(path)) && _to_xlsx(data, joinpath(path, filename))
+    # Save graph data to zip of CSVs
+    filename = "$(topology.id).zip"
+    ∉(filename, readdir(path)) && _to_zip(data, joinpath(path, filename))
 
     return nothing
 end
@@ -153,31 +186,113 @@ end
 # I/O Reproducibility
 ###############################################################################
 
-"Generate unique identifier for AC-OPF instances"
-function generate_uid()
+"""
+    generate_uid(path::String)
 
-    ls_main = _DF.DataFrame[]
-    configs = filter(entry -> isdir(entry), readdir())
-    for config in configs
-        
-        path = joinpath(pwd(), config)
-        ls_sub = _DF.DataFrame[]
-        for file in filter(x -> contains(x, "info"), readdir(path))
-            data = _DF.DataFrame(CSV.File(joinpath(path, file)))
-            _DF.insertcols!(data, 1, :worker => parse(Int, file[6:end-4]))
-            _DF.insertcols!(data, 2, :case => axes(data, 1))
-            push!(ls_sub, data)    
-        end
-        df = reduce(vcat, ls_sub)
-        _DF.insertcols!(df, 1, :config => parse(Int, config[2:end]))
-        push!(ls_main, df)   
+Generate unique identifier for AC-OPF instances by sorting them based on
+total load active power, objective value and topology.
+"""
+function generate_uid(path::String)
+
+    ls = _DF.DataFrame[]
+    for file in filter(x -> contains(x, "info"), readdir(path))
+        data = _DF.DataFrame(CSV.File(joinpath(path, file)))
+        _DF.insertcols!(data, 1, :worker => parse(Int, file[6:end-4]))
+        _DF.insertcols!(data, 2, :case => axes(data, 1))
+        push!(ls, data)    
     end
-    df = reduce(vcat, ls_main)
+    df = reduce(vcat, ls)
     # Sort AC-OPF instances based on total load active power and objective value
-    _DF.sort!(df, [:pd_tot, :objective, :config])
+    _DF.sort!(df, [:pd_tot, :objective, :topology_id])
     _DF.insertcols!(df, 1, :uid => axes(df, 1))
-    _DF.sort!(df, [:config, :worker, :case])
+    
+    return df
+end
 
-    CSV.write("map.csv", df)
+###############################################################################
+# Dataset split
+###############################################################################
+
+"""
+    generate_split(setting::NamedTuple)
+
+Split the AC-OPF dataset in folds for cross-validation, creating a reproducible mapping between
+instance ID (in terms of worker, topology and case) and fold which it belongs to.
+The mapping is saved as `map.csv` in the main dataset folder.
+
+## Notes
+
+The splitting strategy is automatically selected depending on whether a single or multiple topologies
+are available:
+- In case of single topology, splitting is performed as stratified in terms of total load active power.
+Is is expected that AC-OPF instances are uniquely identified as sorted by this variable.
+- In case of multiple topologies, these are distributed across the different folders, with each topology
+beloning to a single fold.
+"""
+function generate_split(setting::NamedTuple)
+
+    path = pwd()
+    n_fold = setting.DATASET.num_folds
+    n_quantile = setting.DATASET.num_quantiles
+    rng = _RND.MersenneTwister(setting.CASE.baseseed)
+
+    map = generate_uid(path)
+
+    if length(unique(map.topology_id)) == 1
+        folds = total_load_active_power_split(map, rng, n_fold, n_quantile)
+    else
+        folds = topology_split(map, rng, n_fold)
+    end
+    _DF.insertcols!(map, 2, :fold => folds)
+
+    _DF.sort!(map, [:worker, :case, :topology_id])
+    CSV.write(joinpath(path, "map.csv"), map)
     return nothing
+end
+
+"Split samples in CV folds for dataset with multiple topologies"
+function topology_split(map::_DF.DataFrame, rng::_RND.AbstractRNG, n_fold::Int)
+
+    _DF.sort!(map, :topology_id)
+
+    ids = _RND.shuffle(rng, unique(map.topology_id))
+    dim = length(copy(ids)) ÷ n_fold
+    folds = zeros(Int, size(map, 1))
+    for i in 1:n_fold
+
+        num = 1:(i == n_fold ? length(ids) : dim)
+        mask = in.(map.topology_id, Ref(ids[num]))
+        folds[mask] .= i
+        deleteat!(ids, num)
+    end
+    return folds
+end
+
+"Split samples in CV folds for dataset with single topology"
+function total_load_active_power_split(map::_DF.DataFrame, rng::_RND.AbstractRNG, n_fold::Int, n_quantile::Int)
+
+    _DF.sort!(map, :uid)
+    @assert issorted(map.pd_tot)
+
+    # Bin UID based on total load active power quantiles
+    r = 1 / n_quantile
+    quantiles = quantile(map.pd_tot, (0 + r):r:(1 - r); sorted=true)
+    classes = searchsortedfirst.(Ref(quantiles), map.pd_tot)
+    bins = Dict(i => findall(x -> x == i, classes) for i in 1:n_quantile)
+
+    # Create folds with stratified sampling
+    folds = zeros(Int, size(map, 1))
+    for bin in values(bins)
+
+        _RND.shuffle!(rng, bin)
+        dim = length(bin) ÷ n_fold
+        @assert dim > 0 "Not enough samples to create $n_fold folds with $n_quantile quantiles, reduce either."
+
+        for (i, fold) in enumerate(_RND.shuffle(rng, 1:n_fold))
+            num = 1:(i == n_fold ? length(bin) : dim)
+            folds[bin[num]] .= fold
+            deleteat!(bin, num)
+        end
+    end
+    return folds
 end

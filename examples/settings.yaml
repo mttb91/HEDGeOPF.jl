@@ -8,12 +8,21 @@ CASE:
     num_batches : 2                             # ::Int64 - Number of batches in which the total samples are processed
     num_items   : 1                             # ::Int64 - Number of load samples generated for a single total load active power level
 
+TOPOLOGY:
+    k_gen        : 1                            # ::Int64 - Maximum number of generators removed per topology perturbation
+    k_branch     : 2                            # ::Int64 - Maximum number of branches removed per topology perturbation
+    num_topo     : 100                          # ::Int64 - Number of topology perturbations to be generated
+
 SAMPLING:
     delta_pd    : 100.0                         # ::Float64 - Percentage variation in load active power around the nominal values
     delta_qd    : 100.0                         # ::Float64 - Percentage variation in load reactive power around the nominal values
     delta_pf    : 0.05                          # ::Float64 - Maximum reduction in power factor w.r.t. the nominal absolute value
     max_pf      : 0.99                          # ::Float64 - Maximum allowable load power factor
     min_pf      : 0.01                          # ::Float64 - Minimum allowable load power factor
+
+DATASET:
+    num_folds     : 10                          # ::Int - Number of cross-validation folds in which the dataset is split
+    num_quantiles : 20                          # ::Int - Number of quantiles of total load active power in which OPF samples are classified
 
 PARALLEL:
     cpu_ratio : 50.0                            # ::Float64 - Percentage of CPU threads to use w.r.t. `Sys.CPU_THREADS` count

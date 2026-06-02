@@ -9,6 +9,11 @@ CASE:
     num_batches : 2                             # ::Int64 - Number of batches in which the total samples are processed
     num_items   : 3                             # ::Int64 - Number of load samples generated for a single total load active power level
 
+TOPOLOGY:
+    k_gen        : 1                            # ::Int64 - Maximum number of generators removed per topology perturbation
+    k_branch     : 2                            # ::Int64 - Maximum number of branches removed per topology perturbation
+    num_topo     : 100                          # ::Int64 - Number of topology perturbations to be generated
+
 SAMPLING:
     delta_pd    : 110.0                         # ::Float64 - Percentage variation in load active power around the nominal values
     delta_qd    : 100.0                         # ::Float64 - Percentage variation in load reactive power around the nominal values

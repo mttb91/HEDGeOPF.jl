@@ -6,28 +6,28 @@ end
 "Record convergence for the value of total load active power of given OPF case"
 function _record_info!(data::Vector{Vector{Float64}}, case::Vector{Float64})
     push!(data, case)
-    return Int(last(case))
+    return Int(first(case)), Int(last(case))
 end
 
 "Update count for number of OPF iteration and feasible cases"
-function _update_counter!(data::Vector{Int}, status::Int)
-    data[end] += 1
-    data[end-1] += status
+function _update_counter!(counter::ConvergenceCounter, id::Int, status::Int)
+    row = findfirst(==(id), counter.topology_id)
+    counter.n_iter[row] += 1
+    counter.n_converged[row] += status
     return nothing
 end
 
 "Monitor if all input samples have been processed"
-function _convergence_check(data::Vector{Int}, limit::Int)
-    return (data[end] < limit)
+function _convergence_check(counter::ConvergenceCounter, limit::Int)
+    return (sum(counter.n_iter) < limit)
 end
 
 "Update meter defining OPF convergence rate and the remaining number of iterations."
-function _update_meter!(p, counter::Vector{Int}, n_iter::Int, limit::Int)
+function _update_meter!(p, counter::ConvergenceCounter, n_iter::Vector{Int}, limit::Int)
 
-    # Get convergence rate
-    @views value = counter[end-1] / (counter[end] + n_iter) * 100
+    value = sum(counter.n_converged) / (sum(counter.n_iter) + sum(n_iter)) * 100
     _PMT.update!(p,
-        limit - minimum(counter[[begin, end]]);
+        limit - min(sum(counter.n_sample), sum(counter.n_iter));
         showvalues = () -> [("Convergence rate", round(value; digits=2))]
     )
 end
@@ -100,17 +100,16 @@ function sample_polytope_uniformly(bounds::Matrix{Float64}, A::_SA.SharedMatrix{
 end
 
 "Generate OPF cases in parallel for given load instances"
-function generate_opf_samples!(counter::Vector{Int}, model::_PM.AbstractPowerModel, database::NamedTuple, samples::Vector{Dict{String, <:Any}}, 
-    config::String)
+function generate_opf_samples!(counter::ConvergenceCounter, model::_PM.AbstractPowerModel, database::NamedTuple, samples::Vector{InputSample})
 
     nw = _DC.nworkers()
     limit = length(samples)
     chan_to = _init_channel(Vector{Float64}, nw * 4)
-    chan_fr = _init_channel(Dict{String, <:Any}, nw * 4)
+    chan_fr = _init_channel(InputSample, nw * 4)
     meter = _PMT.ProgressThresh(0; dt=30, showspeed=true)
 
-    n_iter = counter[end]
-    counter[end] -= n_iter
+    n_iter = copy(counter.n_iter)
+    counter.n_iter .-= n_iter
     data = Vector{Float64}[]
 
     @sync begin
@@ -121,18 +120,18 @@ function generate_opf_samples!(counter::Vector{Int}, model::_PM.AbstractPowerMod
                 while true
                     try
                         put!(chan_to, solve_model!(model, database, take!(chan_fr)))
-                        export_batch!(database, w, config)
+                        export_batch!(database, w)
                     catch
                         break
                     end
                 end
-                export_batch!(database, w, config; final_batch=true)
+                export_batch!(database, w; final_batch=true)
             end
         end
         while _convergence_check(counter, limit)
 
-            status = _record_info!(data, take!(chan_to))
-            _update_counter!(counter, status)
+            id, status = _record_info!(data, take!(chan_to))
+            _update_counter!(counter, id, status)
             _update_meter!(meter, counter, n_iter, limit)
             if isempty(samples)
                 isopen(chan_fr) && close(chan_fr)
@@ -143,6 +142,6 @@ function generate_opf_samples!(counter::Vector{Int}, model::_PM.AbstractPowerMod
     end
     isopen(chan_fr) && close(chan_fr)
     close(chan_to)
-    counter[end] += n_iter
-    return permutedims(reduce(hcat, data))
+    counter.n_iter .+= n_iter
+    return _DF.DataFrame(permutedims(reduce(hcat, data)), [:id, :pd_tot, :status])
 end

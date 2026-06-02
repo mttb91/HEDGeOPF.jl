@@ -20,6 +20,38 @@ function constraint_power_balance_slack(pm::_PM.AbstractPowerModel, i::Int; nw::
     return constraint_power_balance_slack(pm, nw, i, bus_arcs, bus_arcs_dc, bus_arcs_sw, bus_gens, bus_storage, bus_pd, bus_qd, bus_gs, bus_bs)
 end
 
+function constraint_ohms_yt_from(pm::_PM.AbstractPowerModel, i::Int; nw::Int=_PM.nw_id_default)
+    branch = _PM.ref(pm, nw, :branch, i)
+    f_bus = branch["f_bus"]
+    t_bus = branch["t_bus"]
+    f_idx = (i, f_bus, t_bus)
+    t_idx = (i, t_bus, f_bus)
+
+    g, b = _PM.calc_branch_y(branch)
+    tr, ti = _PM.calc_branch_t(branch)
+    g_fr = branch["g_fr"]
+    b_fr = branch["b_fr"]
+    tm = branch["tap"]
+
+    constraint_ohms_yt_from(pm, nw, f_bus, t_bus, f_idx, t_idx, g, b, g_fr, b_fr, tr, ti, tm)
+end
+
+function constraint_ohms_yt_to(pm::_PM.AbstractPowerModel, i::Int; nw::Int=_PM.nw_id_default)
+    branch = _PM.ref(pm, nw, :branch, i)
+    f_bus = branch["f_bus"]
+    t_bus = branch["t_bus"]
+    f_idx = (i, f_bus, t_bus)
+    t_idx = (i, t_bus, f_bus)
+
+    g, b = _PM.calc_branch_y(branch)
+    tr, ti = _PM.calc_branch_t(branch)
+    g_to = branch["g_to"]
+    b_to = branch["b_to"]
+    tm = branch["tap"]
+
+    constraint_ohms_yt_to(pm, nw, f_bus, t_bus, f_idx, t_idx, g, b, g_to, b_to, tr, ti, tm)
+end
+
 "Formulation-agnostic constraint on reactive power setpoint of load with slack"
 function constraint_load_fixed_and_slack_active_power(pm::_PM.AbstractPowerModel, i::Int; nw::Int=_PM.nw_id_default)
 

@@ -5,7 +5,7 @@
     
     @testset "5-bus case" begin
         setup["CASE"]["grid"] = "pglib_opf_case5_pjm.m"
-        res = _PM.optimize_model!(instantiate_model(instantiate_network(setup), "ACP", to_namedtuple(setup)));
+        res = _PM.optimize_model!(deepcopy(DATA["5_pjm"]["pm"]));
         sol = res["solution"]
 
         @test string(res["termination_status"]) == "LOCALLY_SOLVED"
@@ -19,7 +19,7 @@
     @testset "5-bus case with quadratic branch apparent power variables" begin
         setup["MODEL"]["duals"] = true
         setup["CASE"]["grid"] = "pglib_opf_case5_pjm.m"
-        res = _PM.optimize_model!(instantiate_model(instantiate_network(setup), "ACP", to_namedtuple(setup)));
+        res = _PM.optimize_model!(instantiate_model(deepcopy(DATA["5_pjm"]["net"]), "ACP", to_namedtuple(setup)));
         sol = res["solution"]
     
         @test string(res["termination_status"]) == "LOCALLY_SOLVED"
@@ -34,7 +34,7 @@
 
     @testset "5-bus case with active load slack variables" begin
         setup["CASE"]["grid"] = "pglib_opf_case5_pjm.m"
-        net = instantiate_network(setup);
+        net = deepcopy(DATA["5_pjm"]["net"]);
         net["gen"]["3"]["gen_status"] = 0
         net["load"]["1"]["pd"] = 400.0 / net["baseMVA"]
         net["load"]["2"]["pd"] = 500.0 / net["baseMVA"]
@@ -53,7 +53,7 @@
     @testset "5-bus case with active load slack and quadratic branch apparent power variables" begin
         setup["MODEL"]["duals"] = true
         setup["CASE"]["grid"] = "pglib_opf_case5_pjm.m"
-        net = instantiate_network(setup);
+        net = deepcopy(DATA["5_pjm"]["net"]);
         net["gen"]["3"]["gen_status"] = 0
         net["load"]["1"]["pd"] = 400.0 / net["baseMVA"]
         net["load"]["2"]["pd"] = 500.0 / net["baseMVA"]
@@ -74,7 +74,7 @@
 
     @testset "30-bus case" begin
         setup["CASE"]["grid"] = "pglib_opf_case30_ieee.m"
-        res = _PM.optimize_model!(instantiate_model(instantiate_network(setup), "ACP", to_namedtuple(setup)));
+        res = _PM.optimize_model!(deepcopy(DATA["30_ieee"]["pm"]));
         sol = res["solution"]
 
         @test string(res["termination_status"]) == "LOCALLY_SOLVED"

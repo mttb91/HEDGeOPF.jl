@@ -24,7 +24,6 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.8'
           - '1.10'
         R:
           - '4.4'
@@ -45,6 +44,13 @@ jobs:
           r-version: ${{ matrix.R }}
       - run: echo "LD_LIBRARY_PATH=$(R RHOME)/lib:$LD_LIBRARY_PATH" >> $GITHUB_ENV
         if: matrix.os == 'ubuntu-latest'
+      - name: Configure R runtime on Windows
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $rhome = Rscript -e "cat(R.home())"
+          "R_HOME=$rhome" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PATH=$rhome\bin\x64;$rhome\bin;$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - run: Rscript -e 'install.packages("volesti", repos="https://cloud.r-project.org")'
       - uses: julia-actions/cache@v2
       - uses: julia-actions/julia-buildpkg@latest
