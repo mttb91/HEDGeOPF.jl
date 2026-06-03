@@ -67,7 +67,7 @@
 
         # Build a map with 2 workers, folds 1 and 2
         function _make_case_map()
-            return HEDGeOPF._DF.DataFrame(;
+            return _DF.DataFrame(;
                 uid         = 1:8,
                 worker      = [1, 1, 1, 1, 2, 2, 2, 2],
                 case        = [1, 2, 3, 4, 1, 2, 3, 4],
@@ -85,13 +85,13 @@
             @test haskey(result[2], 1) && haskey(result[2], 2)
 
             required_cols = [:case, :uid, :topology_id]
-            col_present = [HEDGeOPF._DF.hasproperty(result[w][f], c)
+            col_present = [_DF.hasproperty(result[w][f], c)
                         for w in [1, 2], f in [1, 2], c in required_cols]
             @test all(col_present)
         end
 
         @testset "fold absent for worker when no rows match" begin
-            map = HEDGeOPF._DF.DataFrame(;
+            map = _DF.DataFrame(;
                 uid         = 1:4,
                 worker      = [1, 1, 2, 2],
                 case        = [1, 2, 1, 2],
@@ -123,7 +123,7 @@
             mkpath(joinpath(tmp, comp))
 
             # Worker 1 CSV: 5 rows, 2 float columns
-            df = HEDGeOPF._DF.DataFrame(;
+            df = _DF.DataFrame(;
                 v1 = Float32.(1:n_rows),
                 v2 = Float32.(n_rows+1:2*n_rows)
             )
@@ -132,8 +132,8 @@
             # cases: worker 1, fold 1 → rows 1-3, fold 2 → rows 4-5
             cases = Dict(
                 1 => Dict(
-                    1 => HEDGeOPF._DF.DataFrame(; case = [1, 2, 3], uid = [1, 2, 3], topology_id = ones(Int, 3)),
-                    2 => HEDGeOPF._DF.DataFrame(; case = [4, 5],    uid = [4, 5],    topology_id = ones(Int, 2)),
+                    1 => _DF.DataFrame(; case = [1, 2, 3], uid = [1, 2, 3], topology_id = ones(Int, 3)),
+                    2 => _DF.DataFrame(; case = [4, 5],    uid = [4, 5],    topology_id = ones(Int, 2)),
                 )
             )
             return var, comp, cases
@@ -146,11 +146,11 @@
                     result = HEDGeOPF._combine_cases(var, comp, cases, 2)
 
                     @test haskey(result, 1) && haskey(result, 2)
-                    @test HEDGeOPF._DF.nrow(result[1]) == 3
-                    @test HEDGeOPF._DF.nrow(result[2]) == 2
-                    @test HEDGeOPF._DF.hasproperty(result[1], :uid)
+                    @test _DF.nrow(result[1]) == 3
+                    @test _DF.nrow(result[2]) == 2
+                    @test _DF.hasproperty(result[1], :uid)
                     # uid is the first column
-                    @test HEDGeOPF._DF.names(result[1])[1] == "uid"
+                    @test _DF.names(result[1])[1] == "uid"
                     # data columns are Float32
                     @test eltype(result[1].v1) == Float32
                     # uid values are unique within each fold
@@ -169,7 +169,7 @@
 
                     # Two workers, 4 rows each
                     for w in 1:2
-                        df = HEDGeOPF._DF.DataFrame(;
+                        df = _DF.DataFrame(;
                             v1 = Float32.(((w-1)*4+1):((w-1)*4+4))
                         )
                         CSV.write(joinpath(tmp, comp, "$(var)-$(w).csv"), df)
@@ -178,19 +178,19 @@
                     # Both workers contribute to both folds, with non-overlapping uids
                     cases = Dict(
                         1 => Dict(
-                            1 => HEDGeOPF._DF.DataFrame(; case = [1, 2], uid = [1, 2],   topology_id = ones(Int, 2)),
-                            2 => HEDGeOPF._DF.DataFrame(; case = [3, 4], uid = [3, 4],   topology_id = ones(Int, 2)),
+                            1 => _DF.DataFrame(; case = [1, 2], uid = [1, 2],   topology_id = ones(Int, 2)),
+                            2 => _DF.DataFrame(; case = [3, 4], uid = [3, 4],   topology_id = ones(Int, 2)),
                         ),
                         2 => Dict(
-                            1 => HEDGeOPF._DF.DataFrame(; case = [1, 2], uid = [5, 6],   topology_id = ones(Int, 2)),
-                            2 => HEDGeOPF._DF.DataFrame(; case = [3, 4], uid = [7, 8],   topology_id = ones(Int, 2)),
+                            1 => _DF.DataFrame(; case = [1, 2], uid = [5, 6],   topology_id = ones(Int, 2)),
+                            2 => _DF.DataFrame(; case = [3, 4], uid = [7, 8],   topology_id = ones(Int, 2)),
                         ),
                     )
 
                     result = HEDGeOPF._combine_cases(var, comp, cases, 2)
 
-                    @test HEDGeOPF._DF.nrow(result[1]) == 4   # 2 from worker 1 + 2 from worker 2
-                    @test HEDGeOPF._DF.nrow(result[2]) == 4
+                    @test _DF.nrow(result[1]) == 4   # 2 from worker 1 + 2 from worker 2
+                    @test _DF.nrow(result[2]) == 4
                     @test allunique(result[1].uid)
                     @test allunique(result[2].uid)
                     # all expected uids present
@@ -206,8 +206,8 @@
                     var, comp, _ = _setup_combine(tmp)
                     bad_cases = Dict(
                         1 => Dict(
-                            1 => HEDGeOPF._DF.DataFrame(; case = [6], uid = [1], topology_id = [1]),  # row 6 out of 5
-                            2 => HEDGeOPF._DF.DataFrame(; case = [1], uid = [2], topology_id = [1]),
+                            1 => _DF.DataFrame(; case = [6], uid = [1], topology_id = [1]),  # row 6 out of 5
+                            2 => _DF.DataFrame(; case = [1], uid = [2], topology_id = [1]),
                         )
                     )
                     @test_throws ErrorException HEDGeOPF._combine_cases(var, comp, bad_cases, 2)
@@ -222,11 +222,145 @@
                     # Only fold 1 has data; fold 2 is completely absent from cases
                     cases_no_fold2 = Dict(
                         1 => Dict(
-                            1 => HEDGeOPF._DF.DataFrame(; case = [1, 2], uid = [1, 2], topology_id = ones(Int, 2)),
+                            1 => _DF.DataFrame(; case = [1, 2], uid = [1, 2], topology_id = ones(Int, 2)),
                         )
                     )
                     err = @test_throws ErrorException HEDGeOPF._combine_cases(var, comp, cases_no_fold2, 2)
                     @test occursin("fold 2", err.value.msg)
+                end
+            end
+        end
+    end
+
+    @testset "_copy_topologies" begin
+        @testset "only .zip archives are copied" begin
+            mktempdir() do dir
+                cd(dir) do
+                    mkpath("graph")
+                    write(joinpath("graph", "a.zip"), "A")
+                    write(joinpath("graph", "b.txt"), "B")
+                    write(joinpath("graph", "c.zip"), "C")
+
+                    HEDGeOPF._copy_topologies("out")
+
+                    dst = joinpath("out", "graph")
+                    @test isdir(dst)
+                    @test isfile(joinpath(dst, "a.zip"))
+                    @test isfile(joinpath(dst, "c.zip"))
+                    @test !isfile(joinpath(dst, "b.txt"))
+
+                    @test read(joinpath(dst, "a.zip"), String) == "A"
+                    @test read(joinpath(dst, "c.zip"), String) == "C"
+                    @test sort(readdir(dst)) == ["a.zip", "c.zip"]
+                end
+            end
+        end
+
+        @testset "overwrites existing destination files" begin
+            mktempdir() do dir
+                cd(dir) do
+                    mkpath("graph")
+                    write(joinpath("graph", "a.zip"), "NEW")
+
+                    mkpath(joinpath("out", "graph"))
+                    write(joinpath("out", "graph", "a.zip"), "OLD")
+
+                    HEDGeOPF._copy_topologies("out")
+
+                    @test read(joinpath("out", "graph", "a.zip"), String) == "NEW"
+                end
+            end
+        end
+    end
+
+    @testset "_cleanup" begin
+
+        @testset "does not remove anything when cleanup is `false`" begin
+            mktempdir() do dir
+                cd(dir) do
+                    # Create dummy component dirs and files
+                    mkpath("bus")
+                    mkpath("gen")
+                    mkpath("graph")
+                    touch("map.csv")
+                    touch("polytope.csv")
+                    touch("rng_state.bin")
+
+                    HEDGeOPF._cleanup(["bus", "gen"], false)
+
+                    @test ispath("bus")
+                    @test ispath("gen")
+                    @test ispath("graph")
+                    @test isfile("map.csv")
+                    @test isfile("polytope.csv")
+                    @test isfile("rng_state.bin")
+                end
+            end
+        end
+
+        @testset "removes specified directories and default files when cleanup is `true`" begin
+            mktempdir() do dir
+                cd(dir) do
+                    # Create dummy component dirs and files
+                    mkpath("bus")
+                    mkpath("gen")
+                    mkpath("graph")
+                    touch("map.csv")
+                    touch("polytope.csv")
+                    touch("rng_state.bin")
+
+                    HEDGeOPF._cleanup(["bus", "gen"], true)
+
+                    @test !ispath("bus")
+                    @test !ispath("gen")
+                    @test !ispath("graph")
+                    @test !isfile("map.csv")
+                    @test !isfile("polytope.csv")
+                    @test !isfile("rng_state.bin")
+                end
+            end
+        end
+
+        @testset "errors if cleanup is `true` but some files are missing" begin
+            mktempdir() do dir
+                cd(dir) do
+                    # map.csv is intentionally missing
+                    mkpath("bus")
+                    mkpath("graph")
+                    touch("polytope.csv")
+                    touch("rng_state.bin")
+
+                    err = @test_throws ErrorException HEDGeOPF._cleanup(["bus"], true)
+                    @test occursin("map.csv", err.value.msg)
+                    @test occursin("partially corrupted/incomplete dataset", err.value.msg)
+                    # Precheck failure must not delete anything
+                    @test isdir("bus")
+                    @test isdir("graph")
+                    @test isfile("polytope.csv")
+                    @test isfile("rng_state.bin")
+                end
+            end
+        end
+    end
+
+    @testset "_write_parquet" begin
+        @testset "writes DataFrame to Parquet file" begin
+            mktempdir() do dir
+                path = joinpath(dir, "test.parquet")
+                sql_path = replace(path, '\\' => '/')
+
+                db = _DDB.DB()
+                try
+                    df = _DF.DataFrame(
+                        a = 1:5,
+                        b = ["x", "y", "z", "w", "v"],
+                    )
+                    HEDGeOPF._write_parquet(db, df, path)
+
+                    read_df = _DDB.query(db, "SELECT * FROM read_parquet('$sql_path')") |> _DF.DataFrame
+                    @test read_df == df
+                finally
+                    _DDB.DBInterface.close(db)
                 end
             end
         end
@@ -237,7 +371,7 @@
         # Write two synthetic info CSVs that generate_uid expects
         function _write_info_csvs(tmp)
             for worker in 1:2
-                df = HEDGeOPF._DF.DataFrame(;
+                df = _DF.DataFrame(;
                     pd_tot      = Float64.(worker:2:(worker + 4)),
                     objective   = ones(Float64, 3),
                     topology_id = ones(Int, 3)
@@ -253,17 +387,17 @@
                     generate_uid(false)
 
                     @test isfile(joinpath(tmp, "map.csv"))
-                    map = HEDGeOPF._DF.DataFrame(CSV.File(joinpath(tmp, "map.csv")))
+                    map = _DF.DataFrame(CSV.File(joinpath(tmp, "map.csv")))
 
                     # Required columns exist
                     for col in [:uid, :worker, :case, :pd_tot, :objective, :topology_id]
-                        @test HEDGeOPF._DF.hasproperty(map, col)
+                        @test _DF.hasproperty(map, col)
                     end
                     # UIDs are unique and span 1:nrow
                     @test allunique(map.uid)
                     @test sort(map.uid) == collect(axes(map, 1))
                     # 2 workers × 3 rows each
-                    @test HEDGeOPF._DF.nrow(map) == 6
+                    @test _DF.nrow(map) == 6
                 end
             end
         end
@@ -274,8 +408,8 @@
                     _write_info_csvs(tmp)
                     generate_uid(false)
 
-                    map = HEDGeOPF._DF.DataFrame(CSV.File(joinpath(tmp, "map.csv")))
-                    HEDGeOPF._DF.sort!(map, [:pd_tot, :objective, :topology_id])
+                    map = _DF.DataFrame(CSV.File(joinpath(tmp, "map.csv")))
+                    _DF.sort!(map, [:pd_tot, :objective, :topology_id])
                     @test map.uid == collect(axes(map, 1))
                 end
             end

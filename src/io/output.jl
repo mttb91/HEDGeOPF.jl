@@ -40,6 +40,7 @@ function _case_lookup(map::_DF.DataFrame)
     return lookup
 end
 
+"Copy topology `.zip` archives to the output folder to be accessible in the final dataset."
 function _copy_topologies(out_dir::String)
     src = "graph"
     dst = joinpath(out_dir, src)
@@ -50,18 +51,26 @@ function _copy_topologies(out_dir::String)
     return nothing
 end
 
-"Remove all original dataset files"
+"Remove all original dataset files if `cleanup` is true."
 function _cleanup(components::Vector{String}, cleanup:: Bool)
     if cleanup
-        names = vcat(components, ["graph", "map.csv", "polytope.csv", "rng_state.bin"])
-        for name in names
-            rm(name; recursive=true)
+        paths = vcat(components, ["graph", "map.csv", "polytope.csv", "rng_state.bin"])
+        if !all(ispath, paths)
+            sel = filter(x -> !ispath(x), paths)
+            msg = (
+                "Files and/or folders $(sel) are missing. It is thus not possible to " *
+                "proceed with cleanup of a partially corrupted/incomplete dataset."
+            )
+            error(msg)
+        end
+        for path in paths
+            rm(path; recursive=true)
         end
     end
     return nothing
 end
 
-function _write_parquet!(db::_DDB.DB, data::_DF.DataFrame, path::String)
+function _write_parquet(db::_DDB.DB, data::_DF.DataFrame, path::String)
     _mkpath(dirname(path))
     _DDB.register_data_frame(db, data, "temp")
     try
@@ -152,11 +161,11 @@ function generate_split(setting::NamedTuple; dst::Union{String, Nothing} = nothi
     # Group cases by fold and save them in parquet format per variable
     db = _DDB.DB()
     try
-        _write_parquet!(db, map, joinpath(dst, "map.parquet"))
+        _write_parquet(db, map, joinpath(dst, "map.parquet"))
         for (component, vars) in map_vars
             for var in vars
                 for (fold, data) in _combine_cases(var, component, map_cases, setting.DATASET.num_folds)
-                    _write_parquet!(db, data, joinpath(dst, component, "$(var)-$(fold).parquet"))
+                    _write_parquet(db, data, joinpath(dst, component, "$(var)-$(fold).parquet"))
                 end
             end
         end

@@ -5,7 +5,7 @@ using Test
 import HiGHS
 import Ipopt
 import HEDGeOPF: _DC, _PM, _DF, _RND, _DDB, JuMP, RCall, CSV, Statistics
-import HEDGeOPF: _isempty, _sql_string, _var_lookup, _case_lookup, _combine_cases
+import HEDGeOPF: _isempty
 
 @testset "HEDGeOPF" begin
 
