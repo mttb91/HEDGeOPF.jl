@@ -4,7 +4,7 @@ using Test
 
 import HiGHS
 import Ipopt
-import HEDGeOPF: _DC, _PM, _DF, JuMP, RCall
+import HEDGeOPF: _DC, _PM, _DF, _RND, _DDB, JuMP, RCall, CSV, Statistics
 import HEDGeOPF: _isempty
 
 @testset "HEDGeOPF" begin
@@ -33,5 +33,10 @@ import HEDGeOPF: _isempty
 
     include("parallel.jl")
     include("sampling.jl")
-    
+
+    # Splitting and output
+
+    include("splitting.jl")
+    include("output.jl")
+
 end
