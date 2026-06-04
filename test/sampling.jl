@@ -5,7 +5,8 @@
 
     @testset "test generation perturbation" begin
 
-        k = 2
+        k_min = 0
+        k_max = 2
         setup["CASE"]["grid"] = "pglib_opf_case5_pjm.m"
         pm = deepcopy(DATA["5_pjm"]["pm"]);
         data = define_candidate_ref_buses(pm)
@@ -15,9 +16,9 @@
         @testset "output contract" begin
 
             rng = HEDGeOPF._RND.MersenneTwister(1234)
-            seq = [perturb_generation(pm, rng, k) for _ in 1:100]
+            seq = [perturb_generation(pm, rng, k_min, k_max) for _ in 1:100]
 
-            @test all(in.(length.(getfield.(seq, :ids_gen_faulted)), Ref(collect(0:k))))
+            @test all(in.(length.(getfield.(seq, :ids_gen_faulted)), Ref(collect(k_min:k_max))))
             @test all(in.(unique(reduce(vcat, getfield.(seq, :ids_gen_faulted))), Ref(ids_gen)))
             @test all(in.(unique(reduce(vcat, getfield.(seq, :ids_bus_ref_valid))), Ref(ids_bus_ref_valid)))
         end
@@ -27,10 +28,21 @@
             rng1 = HEDGeOPF._RND.MersenneTwister(1234)
             rng2 = HEDGeOPF._RND.MersenneTwister(1234)
 
-            seq1 = [perturb_generation(pm, rng1, k) for _ in 1:n]
-            seq2 = [perturb_generation(pm, rng2, k) for _ in 1:n]
+            seq1 = [perturb_generation(pm, rng1, k_min, k_max) for _ in 1:n]
+            seq2 = [perturb_generation(pm, rng2, k_min, k_max) for _ in 1:n]
 
             @test seq1 == seq2
+        end
+
+        @testset "perturb generation with too many faulted generators" begin
+
+            # All generators are faulted, so no eligible reference bus can be retained
+            rng = HEDGeOPF._RND.MersenneTwister(1234)
+            k_min = 5
+            k_max = 5
+
+            err = @test_throws ArgumentError perturb_generation(pm, rng, k_min, k_max)
+            @test occursin("Unable to generate a valid generation perturbation", err.value.msg)
         end
     end
 
@@ -46,27 +58,24 @@
         ids_bus_ref_valid = data.gen_bus[data.mask_ref .& data.mask_unshared]
 
         @testset "perturb topology without islanding" begin
-            merge!(
-                setup["TOPOLOGY"], Dict("k_gen" => 0, "k_branch" => 3)
-            )
-            settings = to_namedtuple(setup)
 
-            k = settings.TOPOLOGY.k_branch
+            k_min = 1
+            k_max = 2
             rng1 = HEDGeOPF._RND.MersenneTwister(1234)
             rng2 = HEDGeOPF._RND.MersenneTwister(1234)
             ids_all_bus = sort(collect(_PM.ids(pm, :bus)))
             ids_all_branch = sort(collect(_PM.ids(pm, :branch)))
 
-            topos1 = [perturb_topology(pm, rng1, k) for _ in 1:100]
-            topos2 = [perturb_topology(pm, rng2, k) for _ in 1:100]
+            topos1 = [perturb_topology(pm, rng1, k_min, k_max) for _ in 1:100]
+            topos2 = [perturb_topology(pm, rng2, k_min, k_max) for _ in 1:100]
             # Test reproducibility with fixed seed
             @test topos1 == topos2
             # Test output contract
             @test all(isempty.(getfield.(topos1, :ids_bus)))
             @test all(isempty.(getfield.(topos1, :ids_gen)))
             @test all(length.(getfield.(topos1, :ids_ref)) .== 1)
-            @test all(.>=(length.(getfield.(topos1, :ids_branch)), 1))
-            @test all(.<=(length.(getfield.(topos1, :ids_branch)), k))
+            @test all(.>=(length.(getfield.(topos1, :ids_branch)), k_min))
+            @test all(.<=(length.(getfield.(topos1, :ids_branch)), k_max))
             # Reference bus cannot change if islanding is not allowed
             @test all(first.(getfield.(topos1, :ids_ref)) .== 1)
             # Test consistency of returned ids with the model
@@ -75,17 +84,15 @@
         end
 
         @testset "perturb topology with faulted generator" begin
-            merge!(
-                setup["TOPOLOGY"], Dict("k_gen" => 0, "k_branch" => 3)
-            )
-            settings = to_namedtuple(setup)
+
             # Fault at reference bus generator
             ids_bus_ref_valid_red = setdiff(ids_bus_ref_valid, [1])
 
-            k = settings.TOPOLOGY.k_branch
+            k_min = 1
+            k_max = 3
             rng1 = HEDGeOPF._RND.MersenneTwister(1234)
             topos1 = [
-                perturb_topology(pm, rng1, k; ids_bus_ref_valid=ids_bus_ref_valid_red)
+                perturb_topology(pm, rng1, k_min, k_max; ids_bus_ref_valid=ids_bus_ref_valid_red)
                 for _ in 1:100
             ]
 
@@ -93,9 +100,20 @@
             @test all(first.(getfield.(topos1, :ids_ref)) .== 2)
         end
 
+        @testset "perturb topology with too many faulted branches" begin
+
+            # All branches are faulted, so islanding is unavoidable
+            k_min = 20
+            k_max = 20
+            rng1 = HEDGeOPF._RND.MersenneTwister(1234)
+            err = @test_throws ArgumentError perturb_topology(pm, rng1, k_min, k_max)
+            @test occursin("Unable to generate a valid topology perturbation", err.value.msg)
+        end
+
         @testset "topology generator iteration contract" begin
             merge!(
-                setup["TOPOLOGY"], Dict("k_gen" => 0, "k_branch" => 6, "num_topo" => 100)
+                setup["TOPOLOGY"],
+                Dict("k_min_gen" => 0, "k_max_gen" => 0, "k_min_branch" => 1, "k_max_branch" => 6, "num_topo" => 100)
             )
             settings = to_namedtuple(setup)
             rng = HEDGeOPF._RND.MersenneTwister(1234);
@@ -121,7 +139,8 @@
 
         @testset "topology generator iteration with fixed topology" begin
             merge!(
-                setup["TOPOLOGY"], Dict("k_gen" => 2, "k_branch" => 6,  "num_topo" => 0)
+                setup["TOPOLOGY"],
+                Dict("k_min_gen" => 0, "k_max_gen" => 2, "k_min_branch" => 1, "k_max_branch" => 6, "num_topo" => 0)
             )
             settings = to_namedtuple(setup)
             rng = HEDGeOPF._RND.MersenneTwister(1234);
@@ -137,7 +156,8 @@
 
         @testset "topology generator iteration with generation perturbation" begin
             merge!(
-                setup["TOPOLOGY"], Dict("k_gen" => 2, "k_branch" => 6,  "num_topo" => 1000)
+                setup["TOPOLOGY"],
+                Dict("k_min_gen" => 0, "k_max_gen" => 2, "k_min_branch" => 1, "k_max_branch" => 6, "num_topo" => 1000)
             )
             settings = to_namedtuple(setup)
             rng = HEDGeOPF._RND.MersenneTwister(1234);
@@ -157,7 +177,8 @@
 
         @testset "wrapper to generate topologies" begin
             merge!(
-                setup["TOPOLOGY"], Dict("k_gen" => 2, "k_branch" => 6, "num_topo" => 500)
+                setup["TOPOLOGY"], 
+                Dict("k_min_gen" => 0, "k_max_gen" => 2, "k_min_branch" => 1, "k_max_branch" => 6, "num_topo" => 500)
             )
             settings = to_namedtuple(setup)
             rng = HEDGeOPF._RND.MersenneTwister(1234)

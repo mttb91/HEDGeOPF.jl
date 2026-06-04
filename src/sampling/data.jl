@@ -4,29 +4,31 @@
 ###############################################################################
 
 """
-    perturb_topology(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, k::Int;
+    perturb_topology(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, k_min::Int, k_max::Int;
         ids_bus_ref_valid::Vector{Int} = Vector{Int}()
     )
 
-Generate a single topology perturbation by removing up to `k` branches at random and by
-keeping only perturbations that result in a single connected component. Returns:
+Generate a single topology perturbation by removing between `k_min` and `k_max` branches at
+random and by keeping only perturbations that result in a single connected component.
+Returns a named tuple with:
 - `ids_branch`: the ids of removed branches
 - `ids_bus`: the ids of disconnected buses (empty in case islanding is not modelled)
 - `ids_ref`: the ids of the reference buses, one for each connected component
 - `ids_gen`: the ids of disconnected generators (empty in case islanding is not modelled)
 """
-function perturb_topology(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, k::Int;
+function perturb_topology(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, k_min::Int, k_max::Int;
     ids_bus_ref_valid::Vector{Int} = Vector{Int}()
 )
 
-    ks = 1:k
+    ks = k_min:k_max
     nbus = length(_PM.ref(pm, :bus))
     edges = get_pm_value(pm, :branch, ["index", "f_bus", "t_bus"], Array{Any, 2})
     dims = 1:size(edges, 1)
 
     ids_branch = Vector{Int}()
     ids_ref, ids_bus, ids_gen = Vector{Int}(), Vector{Int}(), Vector{Int}()
-    if !iszero(k)
+    if !iszero(k_max)
+        count = 0
         while true
             # Generate ids of branches to be removed
             n = _RND.rand(rng, ks)
@@ -38,6 +40,15 @@ function perturb_topology(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, k::
             if isempty(ccs)
                 push!(ids_ref, define_ref_bus(pm, lcc, ids_bus_ref_valid))
                 break
+            end
+            if count > 10000
+                msg = (
+                    "Unable to generate a valid topology perturbation after $count iterations. " *
+                    "Please check the settings for `k_min_branch` and `k_max_branch`."
+                )
+                throw(ArgumentError(msg))
+            else
+                count += 1
             end
         end
     end
@@ -51,15 +62,15 @@ function perturb_topology(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, k::
 end
 
 """
-    perturb_generation(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, k::Int)
+    perturb_generation(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, k_min::Int, k_max::Int)
 
-Generate a single generation perturbation by dropping at most `k` generators at random as
-long as at least an eligible reference generator candidate is retained in the system `pm`.
-Return:
+Generate a single generation perturbation by removing between `k_min` and `k_max` generators
+at random as long as at least an eligible reference generator candidate is retained in the
+model `pm`. Returns a named tuple with:
 - `ids_gen_faulted`: the ids of faulted generators
 - `ids_bus_ref_valid`: the ids of remaining eligible reference bus candidates
 """
-function perturb_generation(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, k::Int)
+function perturb_generation(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, k_min::Int, k_max::Int)
 
     # Define candidate reference buses for the given model
     data = define_candidate_ref_buses(pm)
@@ -68,10 +79,11 @@ function perturb_generation(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, k
     ids_gen_valid = data.index[mask_valid]
     ids_bus_ref_valid = data.gen_bus[mask_valid]
 
-    if iszero(k)
+    if iszero(k_max)
         ids = Vector{Int}()
     else
-        ks = 0:k
+        count = 0
+        ks = k_min:k_max
         while true
             # Generate ids of generator to be removed
             n = _RND.rand(rng, ks)
@@ -84,6 +96,15 @@ function perturb_generation(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, k
             # Keep pertrubation only if eligible reference generators are retained
             if !isempty(setdiff(ids_gen_valid, ids))
                 break
+            end
+            if count > 10000
+                msg = (
+                    "Unable to generate a valid generation perturbation after $count iterations. " *
+                    "Please check the settings for `k_min_gen` and `k_max_gen`."
+                )
+                throw(ArgumentError(msg))
+            else
+                count += 1
             end
         end
     end
@@ -108,8 +129,11 @@ function Base.iterate(gen::TopologyPerturbationGenerator, state::Nothing = nothi
             pg_tot_bounds = limits
         )
     else
-        p_gen = perturb_generation(pm, gen.rng, setting.TOPOLOGY.k_gen)
-        p_branch = perturb_topology(pm, gen.rng, setting.TOPOLOGY.k_branch;
+        p_gen = perturb_generation(
+            pm, gen.rng, setting.TOPOLOGY.k_min_gen, setting.TOPOLOGY.k_max_gen
+        )
+        p_branch = perturb_topology(
+            pm, gen.rng, setting.TOPOLOGY.k_min_branch, setting.TOPOLOGY.k_max_branch;
             ids_bus_ref_valid = p_gen.ids_bus_ref_valid
         )
 

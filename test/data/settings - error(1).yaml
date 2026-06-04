@@ -9,8 +9,10 @@ CASE:
     num_items   : 3                             # ::Int64 - Number of load samples generated for a single total load active power level
 
 TOPOLOGY:
-    k_gen        : 1                            # ::Int64 - Maximum number of generators removed per topology perturbation
-    k_branch     : 2                            # ::Int64 - Maximum number of branches removed per topology perturbation
+    k_min_gen    : 0                            # ::Int64 - Minimum number of generators removed per topology perturbation
+    k_max_gen    : 1                            # ::Int64 - Maximum number of generators removed per topology perturbation
+    k_min_branch : 1                            # ::Int64 - Minimum number of branches removed per topology perturbation
+    k_max_branch : 2                            # ::Int64 - Maximum number of branches removed per topology perturbation
     num_topo     : 100                          # ::Int64 - Number of topology perturbations to be generated
 
 DATASET:

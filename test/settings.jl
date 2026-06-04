@@ -6,12 +6,14 @@
     @testset "Invalid configuration file" begin
         @test_throws AssertionError read_settings("data/settings - error(1).yaml")
         @test_throws KeyError read_settings("data/settings - error(2).yaml")
+        err = @test_throws ArgumentError read_settings("data/settings - error(3).yaml")
+        @test occursin("`k_min_branch`", err.value.msg)
     end
 
     @testset "Valid configuration file" begin
 
         @test isa(setup, Dict{String, Any})
-        @test all(haskey.(Ref(setup), ["CASE", "DATASET", "MODEL", "PARALLEL", "PATH", "SAMPLING", "SOLVER"]))
+        @test all(haskey.(Ref(setup), ["CASE", "DATASET", "MODEL", "PARALLEL", "PATH", "SAMPLING", "SOLVER", "TOPOLOGY"]))
         @test all(haskey.(Ref(setup["CASE"]), ["append", "baseseed", "grid", "name", "num_batches", "num_items", "num_samples"]))
         @test all(haskey.(Ref(setup["DATASET"]), ["cleanup", "name", "num_folds", "num_quantiles", "num_samples"]))
         @test all(haskey.(Ref(setup["MODEL"]), ["duals", "voll"]))
@@ -19,6 +21,7 @@
         @test all(haskey.(Ref(setup["PATH"]), ["input", "output"]))
         @test all(haskey.(Ref(setup["SAMPLING"]), ["delta_pd", "delta_qd", "delta_pf", "max_pf", "min_pf"]))
         @test all(haskey.(Ref(setup["SOLVER"]), ["lp", "nlp", "lp_options", "nlp_options"]))
+        @test all(haskey.(Ref(setup["TOPOLOGY"]), ["k_min_gen", "k_max_gen", "k_min_branch", "k_max_branch", "num_topo"]))
     end
 
     for (key, value) in zip(

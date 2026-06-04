@@ -68,5 +68,12 @@ function check_settings(settings::Dict{String, <:Any})
         @assert (value[key] > 0) & (value[key] <= 1) "Invalid value for option `$key`: $(value[key]). It must be in range (0, 1]."
     end
     @assert value["max_pf"] > value["min_pf"] "The value of option `max_pf` must greater that `min_pf`."
+
+    value = settings["TOPOLOGY"]
+    for key in ["branch", "gen"]
+        if value["k_min_" * key] > value["k_max_" * key]
+            throw(ArgumentError("Option `k_min_$(key)` must be smaller or equal than `k_max_$(key)`"))
+        end
+    end
     return nothing
 end
