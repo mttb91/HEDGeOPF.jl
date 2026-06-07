@@ -6,13 +6,19 @@ CurrentModule = HEDGeOPF
 
 ## Overview
 
-[HEDGeOPF.jl](https://github.com/mttb91/HEDGeOPF.jl) is a Julia package to generate datasets of AC Optimal Power Flow (AC-OPF) instances for standardized training and testing of Neural Networks (NNs) that learn to approximate this problem. It implements a methodology that delivers high-quality datasets without compromising on efficiency and scalability. Please refer to our [publication](https://arxiv.org/abs/2508.19083) for details on the methodology.
+[HEDGeOPF.jl](https://github.com/mttb91/HEDGeOPF.jl) is a Julia package to generate datasets of AC Optimal Power Flow (AC-OPF) instances for reproducible training and testing of Neural Networks (NNs) that learn to approximate this problem. It implements a methodology that delivers high-quality datasets without compromising on efficiency and scalability. Please refer to our [publication](https://arxiv.org/abs/2508.19083) for details on the methodology.
+
+HEDGeOPF decouples dataset generation from downstream dataset consumption in NN applications for the AC-OPF task, focusing on:
+
+* Preserving enough lineage information to support dataset extension and split regeneration, especially when testing different splitting methods or dataset sizes.
+* Providing reproducible strategies to partition an AC-OPF dataset into cross-validation folds, enabling split-sensitivity analyses alongside standard single-split evaluations.
+* Exposing a compact and structured file layout that remains practical across different AC-OPF learning pipelines and architectures.
 
 ## Installation
 
-The package HEDGeOPF relies on the R package [volesti](https://www.rdocumentation.org/packages/volesti/) for polytope sampling via [RCall.jl](https://github.com/JuliaInterop/RCall.jl). Therefore, these external dependencies must be installed for HEDGeOPF to fully work. Currently, this can be done manually through the following steps:
+The package HEDGeOPF relies on the R package [volesti](https://www.rdocumentation.org/packages/volesti/) for polytope sampling via [RCall.jl](https://github.com/JuliaInterop/RCall.jl). Therefore, these external dependencies must be installed for HEDGeOPF to work properly. Currently, this can be done manually through the following steps:
 
-1. Perform a system-wide installation of R from [CRAN](https://cran.r-project.org/). Is is recommended to install a R ≥ 4.4 release. In particular, the latest version of volesti is build with R 4.4.3.
+1. Perform a system-wide installation of R from [CRAN](https://cran.r-project.org/). It is recommended to install an R ≥ 4.4 release. In particular, the latest version of volesti is built with R 4.4.3.
 2. Open an R session and run the following command to install the latest release of volesti:
 
 ```r
