@@ -16,7 +16,8 @@ makedocs(;
         "Home" => "index.md",
         "Manual" => [
             "Getting Started" => "quickstartguide.md",
-            "Simulation Configuration" => "configuration.md",
+            "Configuration Options" => "configuration.md",
+            "Perturbation Modes" => "perturbations.md",
             "Dataset Format" => "dataset.md"
         ]
     ],
