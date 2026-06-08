@@ -1,6 +1,6 @@
 # Dataset Format
 
-This page documents the folder structure and file formats of the **NN-ready dataset**, which is the user-facing dataset for NN training and testing on the AC-OPF task. See [Inspecting Results](@ref "Inspecting Results") to understand where this folder is located relative to the main results folder. A complete example dataset with 1000 AC-OPF samples is available at [this folder](https://github.com/mttb91/HEDGeOPF.jl/tree/docs/dataset-v2/examples/pglib_opf_case5_pjm/example/test/), being generated with six remote workers using [these configuration options](https://github.com/mttb91/HEDGeOPF.jl/blob/docs/dataset-v2/examples/settings.yaml).
+This page documents the folder structure and file formats of the **NN-ready dataset**, which is the user-facing dataset for NN training and testing on the AC-OPF task. See [Inspecting Results](@ref "Inspecting Results") to understand where this folder is located relative to the main results folder. A complete example dataset with 1000 AC-OPF samples is available at [this folder](https://github.com/mttb91/HEDGeOPF.jl/tree/main/examples/pglib_opf_case5_pjm/example/test/), being generated with six remote workers using [these configuration options](https://github.com/mttb91/HEDGeOPF.jl/blob/main/examples/settings.yaml).
 
 ## Main Level
 

@@ -3,7 +3,7 @@
 Once the installation of HEDGeOPF is successfully completed, it is possible to generate an AC-OPF dataset for a given power system test case by following a few steps. Start by placing at a path of your choosing:
 
 * the network data file in .m format (e.g., `pglib_opf_case5_pjm.m` from [PGLib-OPF](https://github.com/power-grid-lib/pglib-opf) library);
-* the configuration YAML file [`settings.yaml`](https://github.com/mttb91/HEDGeOPF.jl/blob/docs/dataset-v2/examples/settings.yaml) that controls the simulation.
+* the configuration YAML file [`settings.yaml`](https://github.com/mttb91/HEDGeOPF.jl/blob/main/examples/settings.yaml) that controls the simulation.
 
 Open the configuration YAML file and set:
 
