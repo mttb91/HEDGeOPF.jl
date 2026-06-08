@@ -24,7 +24,7 @@ test/
 
 with the following elements:
 
-* Component folders, one for each power system component that has at least one variable in the PowerModels' optimisation model (e.g., `bus`, `branch`, `gen`, etc.), storing variable values across multiple AC-OPF instances. *This implies that AC-OPF inputs and outputs pertaining to the same AC-OPF instance are distributed across multiple files*.
+* Component folders, one for each power system component that has at least one variable in the PowerModels' optimisation model (e.g., `bus`, `branch`, `gen`, etc.), storing variable values **in per-unit** across multiple AC-OPF instances. *This implies that AC-OPF inputs and outputs pertaining to the same AC-OPF instance are distributed across multiple files*.
 * A `graph` folder containing static power system information (i.e., data that does not vary for a given topology) for every topology perturbation available in the dataset. *Therefore, static data is not duplicated for every AC-OPF instance associated with the same topology*.
 * A global mapping file `map.parquet`, which enables matching each AC-OPF with its reference topology and with additional instance-specific AC-OPF metadata (e.g., objective value) through the instance UID. This file has as many rows as the number of AC-OPF instances selected with the splitting strategy (see [`DATASET` Options](@ref "dataset-options")) and is organized into the following columns.
 
@@ -50,7 +50,7 @@ with the following elements:
 
 The `graph` folder contains `TOPOLOGY.num_top + 1` ZIP archives, with the original, intact topology always saved as `1.zip`. Each archive consists of the following set of CSV files:
 
-* One for each *non-empty* power system component dictionary in the PowerModels `ref` model, where each component CSV file contains all static input features defined in PowerModels' [Network Data Dictionary](https://lanl-ansi.github.io/PowerModels.jl/stable/network-data/#The-Network-Data-Dictionary), alongside a few others introduced in the generation process.
+* One for each *non-empty* power system component dictionary in the PowerModels `ref` model, where each component CSV file contains all static input features defined in PowerModels' [Network Data Dictionary](https://lanl-ansi.github.io/PowerModels.jl/stable/network-data/#The-Network-Data-Dictionary), alongside a few others introduced in the generation process. These are provided in per-unit.
 * Bus admittance matrix `_Ybus.csv` and branch admittance matrices at the from (`_Yf.csv`) and the to (`_Yt.csv`) buses in COO format.
 * Approximate prime (`_Bp.csv`) and double-prime (`_Bpp.csv`) susceptance matrices in COO format for Fast Decoupled power flow computations.
 
@@ -59,20 +59,21 @@ Each CSV matrix in COO format follows the structure below. Depending on the matr
 | rows | cols |        re         |         im          |
 |:----:|:----:|:-----------------:|:-------------------:|
 |  1   |  1   | 14.7681599667342  | -56.71804496776893  |
-|  2   |  1   | -9.731618379861413| 32.829555980255364  |
+|  2   |  1   | -9.7316183798614  | 32.829555980255364  |
+| ...  |  ... |        ...        |         ...         |
 
 !!! note
     For a given power system, all CSV files are built from its PowerModels' `ref` model. Therefore, **elements of a given component type that are already faulted/deactivated in the original, intact topology do not appear in these files**. Correct component indexing is nevertheless maintained in order to allow referencing the original MATPOWER files.
 
 !!! warning
-    **For a given perturbation ZIP archive, faulted branches and generators still appear in the respective component CSV files** since the JuMP model is modified in-place without re-instantiating the PowerModels model. They are instead signalled by setting `gen_status` and `br_status` in the `gen.csv` and `branch.csv` files, respectively, to zero. In contrast, **admittances and susceptance matrices are already computed over the reduced subset of active branches**.
+    **For a given perturbation ZIP archive, faulted branches and generators still appear in the respective component CSV files** since the JuMP model is modified in-place without re-instantiating the PowerModels model. See [Topology Perturbations](@ref "Topology Perturbations") and [Generator Perturbations](@ref "Generator Perturbations") to understand how they are signalled. In contrast, **admittances and susceptance matrices are already computed over the reduced subset of active branches**.
 
 !!! warning
     Indexing is one-based since the dataset is generated in Julia.
 
 ## Component Level
 
-Each component folder contains dynamic input and/or output data for all the variables associated with the component (e.g., voltage angle `va` and magnitude `vm` for the `bus` component). For a given variable `var`, data belonging to multiple AC-OPF instances is grouped by cross-validation `fold`, as defined by the splitting strategy, and saved to a Parquet file using the naming convention `"$var-$fold.parquet"`.
+Each component folder contains dynamic input and/or output data in per-unit for all the variables associated with the component (e.g., voltage angle `va` and magnitude `vm` for the `bus` component). For a given variable `var`, data belonging to multiple AC-OPF instances is grouped by cross-validation `fold`, as defined by the splitting strategy, and saved to a Parquet file using the naming convention `"$var-$fold.parquet"`.
 
 ```text
 bus/
