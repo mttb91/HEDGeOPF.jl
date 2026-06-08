@@ -1,5 +1,6 @@
 
 Base.@kwdef mutable struct InfoEntry
+    topology_id::Vector{Int} = Int[]
     termination_status::Vector{Int} = Int[]
     pd_tot::Vector{Float64} = Float64[]
     objective::Vector{Float64} = Float64[]
@@ -194,6 +195,7 @@ function extract_data!(db::NamedTuple, results::Dict{String, <:Any}, model::_PM.
     if solved
         # Extract global OPF solution information
         data = Dict(
+            :topology_id => results["id"],
             :termination_status => Int(solved),
             :pd_tot => sum(vec(get_pm_value(results["solution"], "load", ["pd"], Array{Any, 2}))),
             [Symbol(h) => results[h] for h in ["objective", "solve_time"]]...
@@ -226,17 +228,6 @@ function extract_data!(db::NamedTuple, results::Dict{String, <:Any}, model::_PM.
                 end
             end
         end
-    end
-    return nothing
-end
-
-"Update input load sample if load slack variables are active at the optimum"
-function relax_load!(sample::Dict{String, <:Any}, results::Dict{String, <:Any})
-
-    ref = "load"
-    for var in ["pd", "qd"]
-        data = get_pm_value(results["solution"], ref, var * "_slack_" .* ["up", "down"], Array{Any, 2})
-        sample[ref][var].data .+= vec(diff(data, dims=2))
     end
     return nothing
 end

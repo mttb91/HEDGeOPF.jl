@@ -1,4 +1,25 @@
 
+function variable_bus_voltage(pm::_PM.AbstractPowerModel; kwargs...)
+    variable_bus_voltage_angle(pm; kwargs...)
+    _PM.variable_bus_voltage_magnitude(pm; kwargs...)
+end
+
+function variable_bus_voltage_angle(pm::_PM.AbstractPowerModel; nw::Int=_PM.nw_id_default, report::Bool=true)
+
+    var = _PM.var(pm, nw)[:va] = JuMP.@variable(pm.model,
+        [i in _PM.ids(pm, nw, :bus)], base_name="$(nw)_va",
+        start = _PM.comp_start_value(_PM.ref(pm, nw, :bus, i), "va_start")
+    )
+
+    for (i, bus) in _PM.ref(pm, nw, :bus)
+        if bus["bus_type"] === 3
+            JuMP.fix(var[i], 0.0)
+        end
+    end
+
+    report && _PM.sol_component_value(pm, nw, :bus, :va, _PM.ids(pm, nw, :bus), var)
+end
+
 function variable_load_power(pm::_PM.AbstractPowerModel; kwargs...)
     variable_load_fixed_power(pm; kwargs...)
     variable_load_slack_power(pm; kwargs...)
@@ -113,4 +134,14 @@ function variable_branch_power_apparent_squared(pm::_PM.AbstractACPModel; nw::In
         end
     end
     report && _PM.sol_component_value_edge(pm, nw, :branch, :sf, :st, _PM.ref(pm, nw, :arcs_from), _PM.ref(pm, nw, :arcs_to), var)
+end
+
+function parameter_branch_status(pm::_PM.AbstractPowerModel; nw::Int=_PM.nw_id_default, bounded::Bool=false, report::Bool=false)
+
+    name = :br_status
+    var = _PM.var(pm, nw)[name] = JuMP.@variable(pm.model,
+        [i in _PM.ids(pm, nw, :branch)] in JuMP.Parameter(1.0),
+        base_name="$(nw)_$(string(name))",
+    )
+    report && _PM.sol_component_fixed(pm, nw, :branch, name, _PM.ids(pm, nw, :branch), var)    
 end

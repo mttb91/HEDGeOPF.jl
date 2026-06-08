@@ -145,7 +145,8 @@ function instantiate_polytope(model::_PM.AbstractPowerModel)
     qd_mask = .!iszero.(qd_diag)
     nvar_pd = _DF.nrow(pd)
     nvar_qd = _DF.nrow(qd)
-    ids = (findall(pd_mask), findall(qd_mask))
+    ids = vec(get_pm_value(model, :load, ["index"], Array{Any, 2}))
+    ids = (ids[pd_mask], ids[qd_mask])
 
     # Maximum and minimum load active power constraint
     pd_max = hcat(I(nvar_pd), zeros(nvar_pd, nvar_qd))

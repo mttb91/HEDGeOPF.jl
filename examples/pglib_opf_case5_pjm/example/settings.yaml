@@ -1,0 +1,51 @@
+
+CASE:
+    name        : "example" # ::String - Name of the folder in which the dataset is saved
+    grid        : "pglib_opf_case5_pjm.m"     # ::String - Power system file name
+    append      : false                         # ::Bool - Create a new dataset or append to an existing one
+    num_samples : 1000                         # ::Int64 - Number of OPF samples to be generated
+    num_batches : 2                             # ::Int64 - Number of batches in which the number of samples per topology is processes
+    num_items   : 1                             # ::Int64 - Number of load samples that are generated for a single value of total load active power
+    baseseed    : 0                             # ::Int64 - Seed to control reproducibility
+
+TOPOLOGY:
+    k_min_gen    : 0                            # ::Int64 - Minimum number of generators removed per topology perturbation
+    k_max_gen    : 1                            # ::Int64 - Maximum number of generators removed per topology perturbation
+    k_min_branch : 1                            # ::Int64 - Minimum number of branches removed per topology perturbation
+    k_max_branch : 3                            # ::Int64 - Maximum number of branches removed per topology perturbation
+    num_topo     : 50                           # ::Int64 - Number of topology perturbations to be generated
+
+DATASET:
+    name          : "test"                      # ::String - Name of the folder in which dataset splits are saved
+    cleanup       : false                       # ::Bool - Whether to remove all the original dataset, keeping only split format
+    num_folds     : 10                          # ::Int64 - Number of folds for cross-validation
+    num_samples   : null                        # ::Int64 - Total number of samples to be split into folds, if `null` all available samples are used
+    num_quantiles : 20                          # ::Int64 - Number of quantiles for stratified sampling based on total load
+
+SAMPLING:
+    delta_pd    : 100.0                         # ::Float64 - Relative range of variation in active power around the nominal loading scenario [%]
+    delta_qd    : 100.0                         # ::Float64 - Relative range of variation in reactive power around the nominal loading scenario [%]
+    delta_pf    : 0.05                          # ::Float64 - Absolute reduction value w.r.t. nominal load power factor [1]
+    max_pf      : 0.99                          # ::Float64 - Maximum load power factor [1]
+    min_pf      : 0.01                          # ::Float64 - Minimum load power factor [1]
+
+PARALLEL:
+    cpu_ratio : 40.0                            # ::Float64 - Ratio of CPUs to use w.r.t. Sys.CPU_THREADS [1]
+
+MODEL:
+    duals       : false                         # ::Bool - Record and report dual values for every primal OPF variable
+    voll        : 3000.0                        # ::Float64 - Value of lost load [€/MWh]
+
+PATH:
+    input  : "0 - Grids"                        # ::String - Relative path where to look for the .m grid file
+    output : "1 - NN input"                     # ::String - Relative path where to save results
+
+SOLVER:
+    lp          : "HiGHS"
+    lp_options  :
+        solver            : "ipm"  
+    nlp         : "Ipopt"
+    nlp_options :
+        max_cpu_time      : 1000.0
+        mumps_mem_percent : 10
+        print_level       : 0

@@ -85,3 +85,33 @@ function constraint_thermal_limit_to(pm::_PM.AbstractACPModel, n::Int, t_idx)
 
     JuMP.@constraint(pm.model, s_to == p_to^2 + q_to^2)
 end
+
+function constraint_ohms_yt_from(pm::_PM.AbstractACPModel, n::Int, f_bus, t_bus, f_idx, t_idx, g, b, g_fr, b_fr, tr, ti, tm)
+    p_fr  = _PM.var(pm, n,  :p, f_idx)
+    q_fr  = _PM.var(pm, n,  :q, f_idx)
+    vm_fr = _PM.var(pm, n, :vm, f_bus)
+    vm_to = _PM.var(pm, n, :vm, t_bus)
+    va_fr = _PM.var(pm, n, :va, f_bus)
+    va_to = _PM.var(pm, n, :va, t_bus)
+
+    i = first(t_idx)
+    status = _PM.var(pm, n, :br_status, i)
+
+    JuMP.@constraint(pm.model, p_fr ==  status * ((g+g_fr)/tm^2*vm_fr^2 + (-g*tr+b*ti)/tm^2*(vm_fr*vm_to*cos(va_fr-va_to)) + (-b*tr-g*ti)/tm^2*(vm_fr*vm_to*sin(va_fr-va_to))) )
+    JuMP.@constraint(pm.model, q_fr == status * (-(b+b_fr)/tm^2*vm_fr^2 - (-b*tr-g*ti)/tm^2*(vm_fr*vm_to*cos(va_fr-va_to)) + (-g*tr+b*ti)/tm^2*(vm_fr*vm_to*sin(va_fr-va_to))) )
+end
+
+function constraint_ohms_yt_to(pm::_PM.AbstractACPModel, n::Int, f_bus, t_bus, f_idx, t_idx, g, b, g_to, b_to, tr, ti, tm)
+    p_to  = _PM.var(pm, n,  :p, t_idx)
+    q_to  = _PM.var(pm, n,  :q, t_idx)
+    vm_fr = _PM.var(pm, n, :vm, f_bus)
+    vm_to = _PM.var(pm, n, :vm, t_bus)
+    va_fr = _PM.var(pm, n, :va, f_bus)
+    va_to = _PM.var(pm, n, :va, t_bus)
+
+    i = first(t_idx)
+    status = _PM.var(pm, n, :br_status, i)
+
+    JuMP.@constraint(pm.model, p_to == status *  ((g+g_to)*vm_to^2 + (-g*tr-b*ti)/tm^2*(vm_to*vm_fr*cos(va_to-va_fr)) + (-b*tr+g*ti)/tm^2*(vm_to*vm_fr*sin(va_to-va_fr))) )
+    JuMP.@constraint(pm.model, q_to == status * (-(b+b_to)*vm_to^2 - (-b*tr+g*ti)/tm^2*(vm_to*vm_fr*cos(va_to-va_fr)) + (-g*tr-b*ti)/tm^2*(vm_to*vm_fr*sin(va_to-va_fr))) )
+end

@@ -37,15 +37,22 @@ function _mkdir(path::String)
     return nothing
 end
 
-"Export a dictionary of DataFrames to Excel naming the sheets by the sorted dictionary keys."
-function _to_xlsx(data::Dict{<:Any, _DF.DataFrame}, filepath::String)
+"Export a dictionary of DataFrame to zip folder of CSV files"
+function _to_zip(data::Dict{<:Any, _DF.DataFrame}, path::String)
 
-    # Save static input information
-    XLSX.openxlsx(filepath, mode="w") do xf
-        for (i, key) in enumerate(sort!(collect(keys(data))))
+    _mkpath(dirname(path))
 
-            i == 1 ? XLSX.rename!(xf[i], String(key)) : XLSX.addsheet!(xf, String(key))
-            XLSX.writetable!(xf[i], data[key])
+    _ZA.ZipWriter(path) do w
+        for key in sort(collect(keys(data)))
+
+            _ZA.zip_newfile(w, "$key.csv"; compress=true)
+            io = IOBuffer()
+            try
+                CSV.write(io, data[key])
+                write(w, take!(io))
+            finally
+                close(io)
+            end
         end
     end
 end
@@ -115,36 +122,62 @@ end
 # I/O Power system
 ###############################################################################
 
-"Export graph model based on PowerModels network in XLSX format"
-function export_graph(model::_PM.AbstractPowerModel, config::String; filename::String = "graph.xlsx")
+"Extract data in COO from CSC matrix and save information to Dataframe"
+function extract_coo_data(data::SparseMatrixCSC{<:Number, Int64})
 
-    path = joinpath(pwd(), config)
-    
+    values = data.nzval
+    colptr = data.colptr
+    colidx = vcat([fill(j, d) for (j, d) in enumerate(diff(colptr))]...)
+    if all(isreal.(values))
+        ntp = (rows = data.rowval, cols = colidx, re = real.(values))
+    else
+        ntp = (rows = data.rowval, cols = colidx, re = real.(values), im = imag.(values))
+    end
+    return _DF.DataFrame(ntp)
+end
+
+"Export graph model based on PowerModels network in XLSX format"
+function export_graph(model::_PM.AbstractPowerModel, topology::TopologyPerturbation)
+
+    path = joinpath(pwd(), "graph")
+    _mkdir(path)
+
+    # Update ref dictionary based on topology perturbation
+    model = update_topology(model, topology)
+
     data = Dict{Symbol, _DF.DataFrame}()
-    for element in Symbol.(["bus", "branch", "load", "shunt", "gen"])
+    elements = [:bus, :branch, :load, :shunt, :gen]
+    for element in elements
         # Extract all features of each component table
         if !isempty(_PM.ref(model, element))
             vars = get_pm_key(model, element)
-            filter!(x -> !in(x, ["index", "source_id"]), vars)
+            filter!(x -> !in(x, ["source_id"]), vars)
             data[element] = get_pm_value(model, element, sort!(vars), _DF.DataFrame)
         end
     end
 
-    element = :gen
-    vars = [:cost, :ncost]
+    element, vars = :gen, [:cost, :ncost]
     # Unfold cost vector into components
     _DF.select!(data[element], _DF.Not(vars),
         vars => _DF.ByRow((x, y) -> vcat(repeat([0.0], 3-y), x)) => [:c2, :c1, :c0]
     )
     _DF.select!(data[element], sort(names(data[element])))
-    # Identify synchronous condensers (if any)
-    ids = findall(x -> x.pmax - x.pmin .== 0, eachrow(data[element]))
-    if !isempty(ids)
-        data[:sync] = data[element][ids, [:gen_bus]]
+
+    # Add admittance matrices based on continuous bus mapping
+    indices = calc_connection_indices(data)
+    Y = calc_admittance_matrices(data, indices)
+    for (key, value) in zip(keys(Y), Y)
+        data[Symbol("_$key")] = extract_coo_data(value)
+    end
+    # Add susceptance matrices for Fast Decoupled Power Flow
+    B = calc_susceptance_matrices(data, indices)
+    for (key, value) in zip(keys(B), B)
+        data[Symbol("_$key")] = extract_coo_data(value)
     end
 
-    # Save graph data to xlsx
-    ∉(filename, readdir(path)) && _to_xlsx(data, joinpath(path, filename))
+    # Save graph data to zip of CSVs
+    filename = "$(topology.id).zip"
+    ∉(filename, readdir(path)) && _to_zip(data, joinpath(path, filename))
 
     return nothing
 end
@@ -153,31 +186,34 @@ end
 # I/O Reproducibility
 ###############################################################################
 
-"Generate unique identifier for AC-OPF instances"
-function generate_uid()
+"""
+    generate_uid(cleanup::Bool)
 
-    ls_main = _DF.DataFrame[]
-    configs = filter(entry -> isdir(entry), readdir())
-    for config in configs
-        
-        path = joinpath(pwd(), config)
-        ls_sub = _DF.DataFrame[]
-        for file in filter(x -> contains(x, "info"), readdir(path))
-            data = _DF.DataFrame(CSV.File(joinpath(path, file)))
-            _DF.insertcols!(data, 1, :worker => parse(Int, file[6:end-4]))
-            _DF.insertcols!(data, 2, :case => axes(data, 1))
-            push!(ls_sub, data)    
-        end
-        df = reduce(vcat, ls_sub)
-        _DF.insertcols!(df, 1, :config => parse(Int, config[2:end]))
-        push!(ls_main, df)   
+Generate unique identifier for AC-OPF instances by sorting them based on
+total load active power, objective value and topology.
+"""
+function generate_uid(cleanup::Bool)
+
+    path = pwd()
+    ls = _DF.DataFrame[]
+    for file in filter(x -> contains(x, "info"), readdir(path))
+        data = _DF.DataFrame(CSV.File(joinpath(path, file)))
+        _DF.insertcols!(data, 1, :worker => parse(Int, file[6:end-4]))
+        _DF.insertcols!(data, 2, :case => axes(data, 1))
+        push!(ls, data)    
     end
-    df = reduce(vcat, ls_main)
+    df = reduce(vcat, ls)
     # Sort AC-OPF instances based on total load active power and objective value
-    _DF.sort!(df, [:pd_tot, :objective, :config])
+    _DF.sort!(df, [:pd_tot, :objective, :topology_id])
     _DF.insertcols!(df, 1, :uid => axes(df, 1))
-    _DF.sort!(df, [:config, :worker, :case])
+    # Resort to original order based on worker, case and topology
+    _DF.sort!(df, [:worker, :case, :topology_id])
+    CSV.write(joinpath(path, "map.csv"), df)
 
-    CSV.write("map.csv", df)
+    if cleanup
+        for file in filter(x -> contains(x, "info"), readdir(path))
+            rm(joinpath(path, file); force=true)
+        end
+    end
     return nothing
 end

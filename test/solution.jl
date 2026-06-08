@@ -55,11 +55,12 @@ end
 @testset "test recording and clearing of OPF results in database" begin
 
     setup = deepcopy(SETUP)
-    pm = instantiate_model(instantiate_network(setup), "ACP", to_namedtuple(setup));
+    pm = deepcopy(DATA["5_pjm"]["pm"]);
     d = get_pm_value(pm, :load, ["pd", "qd"], _DF.DataFrame)
     db = instantiate_database(pm, false)
     res = _PM.optimize_model!(pm)
     res["input"] = Dict{String, Any}()
+    res["id"] = 1
     sol = res["solution"]
 
     @testset "recording of primal OPF inputs and results" begin

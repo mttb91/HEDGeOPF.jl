@@ -16,14 +16,26 @@ function read_settings(filename::String)
     return data
 end
 
-"Convert settings to `NamedTuple` and create destination folder"
-function update_settings(settings::Dict{String, <:Any})
-
+"Convert settings `dict` to `NamedTuple` and copy file to destination folder"
+function update_settings(settings::Dict{String, <:Any}; filename::String = "settings.yaml")
     # Convert dictionary to namedtuple
     settings = to_namedtuple(settings)
-    # Generate results folder path
-    _mkpath(settings)
+    save_settings(settings; filename=filename)
     return settings
+end
+
+"Create destination folder and copy settings .yaml file to it"
+function save_settings(settings::NamedTuple; filename::String = "settings.yaml")
+
+    if isfile(abspath(filename))
+        base_path = abspath(filename)
+    else
+        msg = "The settings file does not exist in $(pwd()). Please provide a valid path"
+        throw(DomainError(filename, msg))
+    end
+    _mkpath(settings)
+    cp(base_path, joinpath(pwd(), "settings.yaml"); force=true)
+    return nothing
 end
 
 function check_settings(settings::Dict{String, <:Any})
@@ -56,5 +68,12 @@ function check_settings(settings::Dict{String, <:Any})
         @assert (value[key] > 0) & (value[key] <= 1) "Invalid value for option `$key`: $(value[key]). It must be in range (0, 1]."
     end
     @assert value["max_pf"] > value["min_pf"] "The value of option `max_pf` must greater that `min_pf`."
+
+    value = settings["TOPOLOGY"]
+    for key in ["branch", "gen"]
+        if value["k_min_" * key] > value["k_max_" * key]
+            throw(ArgumentError("Option `k_min_$(key)` must be smaller or equal than `k_max_$(key)`"))
+        end
+    end
     return nothing
 end

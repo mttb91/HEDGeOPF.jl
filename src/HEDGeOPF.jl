@@ -1,17 +1,20 @@
 module HEDGeOPF
 
 using LinearAlgebra
+using SparseArrays
+using Statistics
 
 import PowerModels as _PM
 import JuMP
 
 import Random as _RND
 import DataFrames as _DF
-import Distributions as _DS
-import KernelDensity: kde_lscv
+import Distributions as _DIST
+import DataStructures as _DS
+import DuckDB as _DDB
 import Serialization: serialize, deserialize
+import ZipArchives as _ZA
 import CSV
-import XLSX
 import YAML
 import RCall
 
@@ -23,13 +26,11 @@ function __init__()
     BLAS.set_num_threads(1)
 end
 
-const PolyType = NamedTuple{
-    (:A, :b, :ids),
-    Tuple{Matrix{Float64}, Vector{Float64}, Tuple{Vector{Int}, Vector{Int}}}
-}
+include("io/types.jl")
 
 ## OPF problem
 
+include("model/core/admittance_matrix.jl")
 include("model/core/base.jl")
 include("model/core/constraint_template.jl")
 include("model/core/constraint.jl")
@@ -50,10 +51,16 @@ include("sampling/parallel.jl")
 include("sampling/polytope.jl")
 include("sampling/volesti.jl")
 
+## Graph
+
+include("graph/base.jl")
+
 ## I/O
 
 include("io/miscellaneous.jl")
+include("io/output.jl")
 include("io/results.jl")
+include("io/splitting.jl")
 include("io/settings.jl")
 
 _PM.silence()

@@ -1,12 +1,12 @@
 
 "Export data to .csv file at the pre-defined path folder, emptying the database."
-function export_data!(db::NamedTuple, config::String, worker::Int)
+function export_data!(db::NamedTuple, worker::Int)
 
     fields = [:data, :dual_lb, :dual_ub]
     for (element, entry) in filter(x -> !in(x.first, [:check, :info]), pairs(db))
 
         element = string(element)
-        _mkpath(joinpath(config, element))
+        _mkpath(element)
         for (var, value) in entry
             # Check which variables are recorded (among primals and duals)
             mask = .!isnothing.(getfield.(Ref(value), fields))
@@ -18,14 +18,14 @@ function export_data!(db::NamedTuple, config::String, worker::Int)
                 cols = isa(first(cols), Tuple) ? first.(cols) : cols
                 data = _DF.DataFrame(reduce(hcat, getfield(value, f))', string.(cols); copycols=false)
                 # Save data
-                filename = joinpath(pwd(), config, element, "$(var)$(n)-$(worker-1).csv")
+                filename = joinpath(pwd(), element, "$(var)$(n)-$(worker-1).csv")
                 CSV.write(filename, data; append = isfile(filename) ? true : false)
             end
         end
     end
     # Write general information to file
     data = _DF.DataFrame([f => getfield(db.info, f) for f in fieldnames(typeof(db.info))]; copycols=false)
-    filename = joinpath(pwd(), config, "info-$(worker-1).csv")
+    filename = joinpath(pwd(), "info-$(worker-1).csv")
     CSV.write(filename, data; append = isfile(filename) ? true : false)
     # Empty data collector
     empty_database!(db)
@@ -34,7 +34,7 @@ function export_data!(db::NamedTuple, config::String, worker::Int)
 end
 
 "Export to file a batch of OPF instances (i.e. input-solution pairs)"
-function export_batch!(db::NamedTuple, worker::Int, config::String;
+function export_batch!(db::NamedTuple, worker::Int;
     threshold::Int = 10,
     final_batch::Bool = false)
 
@@ -43,7 +43,7 @@ function export_batch!(db::NamedTuple, worker::Int, config::String;
     test_b = final_batch && !iszero(dim)
 
     if test_a | test_b
-        export_data!(db, config, worker)
+        export_data!(db, worker)
     end
     return nothing
 end

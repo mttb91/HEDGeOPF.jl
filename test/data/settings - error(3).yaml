@@ -1,0 +1,51 @@
+
+CASE:
+    name        : "test"                        # ::String - Name of the folder in which the dataset is saved
+    grid        : "pglib_opf_case5_pjm.m"       # ::String - Full name of the power system grid file
+    append      : false                         # ::Bool - Whether to append new results to an existing dataset
+    baseseed    : 0                             # ::Int64 - Random number generator seed to control reproducibility
+    num_samples : 1000                          # ::Int64 - Total number of AC-OPF samples to generate
+    num_batches : 2                             # ::Int64 - Number of batches in which the total samples are processed
+    num_items   : 3                             # ::Int64 - Number of load samples generated for a single total load active power level
+
+TOPOLOGY:
+    k_min_gen    : 0                            # ::Int64 - Minimum number of generators removed per topology perturbation
+    k_max_gen    : 1                            # ::Int64 - Maximum number of generators removed per topology perturbation
+    k_min_branch : 4                            # ::Int64 - Minimum number of branches removed per topology perturbation
+    k_max_branch : 2                            # ::Int64 - Maximum number of branches removed per topology perturbation
+    num_topo     : 100                          # ::Int64 - Number of topology perturbations to be generated
+
+DATASET:
+    name          : "split"                     # ::String - Name of the folder in which dataset splits are saved
+    cleanup       : false                       # ::Bool - Whether to remove all the original dataset, keeping only split format
+    num_folds     : 10                          # ::Int64 - Number of folds for cross-validation
+    num_samples   : null                        # ::Int64 - Total number of samples to be split into folds, if `null` all available samples are used
+    num_quantiles : 20                          # ::Int64 - Number of quantiles for stratified sampling based on total load
+
+SAMPLING:
+    delta_pd    : 100.0                         # ::Float64 - Percentage variation in load active power around the nominal values
+    delta_qd    : 100.0                         # ::Float64 - Percentage variation in load reactive power around the nominal values
+    delta_pf    : 0.05                          # ::Float64 - Maximum reduction in power factor w.r.t. the nominal absolute value
+    max_pf      : 0.99                          # ::Float64 - Maximum allowable load power factor
+    min_pf      : 0.01                          # ::Float64 - Minimum allowable load power factor
+
+PARALLEL:
+    cpu_ratio : 50.0                            # ::Float64 - Percentage of CPU threads to use w.r.t. `Sys.CPU_THREADS` count
+
+MODEL:
+    duals : false                               # ::Bool - Whether to record dual values for every primal AC-OPF variable
+    voll  : 3000.0                              # ::Float64 - Value of Lost Load
+
+PATH:
+    input  : "grids"                            # ::String - Relative path to the folder containing the grid
+    output : "datasets"                         # ::String - Relative path to the folder where the AC-OPF dataset is saved
+
+SOLVER:
+    lp          : "HiGHS"                       # ::String - Julia package for linear programming solver
+    lp_options  :
+        solver            : "ipm"  
+    nlp         : "Ipopt"                       # ::String - Julia package for nonlinear programming solver
+    nlp_options :
+        max_cpu_time      : 1000.0
+        mumps_mem_percent : 10
+        print_level       : 0

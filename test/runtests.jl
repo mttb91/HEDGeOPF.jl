@@ -4,18 +4,25 @@ using Test
 
 import HiGHS
 import Ipopt
-import HEDGeOPF: _DC, _PM, _DF, JuMP, RCall
+import HEDGeOPF: _DC, _PM, _DF, _RND, _DDB, JuMP, RCall, CSV, Statistics
 import HEDGeOPF: _isempty
 
 @testset "HEDGeOPF" begin
+
+    _PM.silence()
 
     global SETUP = include("settings.jl")
 
     # OPF model
 
-    include("data.jl")
+    global DATA = include("network.jl")
+    include("model.jl")
     include("opf.jl")
     include("solution.jl")
+
+    # Graph
+
+    include("graph.jl")
 
     # Polytope
 
@@ -25,5 +32,11 @@ import HEDGeOPF: _isempty
     # Sampling
 
     include("parallel.jl")
-    
+    include("sampling.jl")
+
+    # Splitting and output
+
+    include("splitting.jl")
+    include("output.jl")
+
 end

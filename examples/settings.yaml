@@ -1,12 +1,18 @@
 CASE:
-    name        : "example"                     # ::String - Name of the folder in which the dataset is saved
-    grid        : "case5_pjm.m"                 # ::String - Full name of the power system grid file
-    uid         : true                          # ::Bool - Whether to generate a unique identifier for each AC-OPF instance
+    name        : "example"                     # ::String - Name of the folder where the dataset is saved
+    grid        : "pglib_opf_case5_pjm.m"       # ::String - Full name of the power system grid (MATPOWER format `.m` file)
     append      : false                         # ::Bool - Whether to append new results to an existing dataset
     baseseed    : 0                             # ::Int64 - Random number generator seed to control reproducibility
-    num_samples : 10000                         # ::Int64 - Total number of AC-OPF samples to generate
-    num_batches : 2                             # ::Int64 - Number of batches in which the total samples are processed
     num_items   : 1                             # ::Int64 - Number of load samples generated for a single total load active power level
+    num_samples : 1000                          # ::Int64 - Total number of AC-OPF samples to be generated 
+    num_batches : 2                             # ::Int64 - Number of batches in which the total samples are processed
+
+TOPOLOGY:
+    k_min_branch : 1                            # ::Int64 - Minimum number of branches removed per topology perturbation
+    k_max_branch : 3                            # ::Int64 - Maximum number of branches removed per topology perturbation
+    k_min_gen    : 0                            # ::Int64 - Minimum number of generators removed per topology perturbation
+    k_max_gen    : 1                            # ::Int64 - Maximum number of generators removed per topology perturbation
+    num_topo     : 50                           # ::Int64 - Total number of perturbations to be generated
 
 SAMPLING:
     delta_pd    : 100.0                         # ::Float64 - Percentage variation in load active power around the nominal values
@@ -14,6 +20,13 @@ SAMPLING:
     delta_pf    : 0.05                          # ::Float64 - Maximum reduction in power factor w.r.t. the nominal absolute value
     max_pf      : 0.99                          # ::Float64 - Maximum allowable load power factor
     min_pf      : 0.01                          # ::Float64 - Minimum allowable load power factor
+
+DATASET:
+    name          : "test"                      # ::String - Folder where the NN-ready dataset is saved
+    cleanup       : false                       # ::Bool - Whether to keep only the NN-ready dataset and `settings.yaml`
+    num_folds     : 10                          # ::Int64 - Number of cross-validation folds for dataset partitioning
+    num_samples   : null                        # ::Union{Int64, Nothing} - Number of samples in the NN-ready dataset (`nothing` means use all)
+    num_quantiles : 20                          # ::Int64 - Number of total load active power quantiles for OPF samples binning
 
 PARALLEL:
     cpu_ratio : 50.0                            # ::Float64 - Percentage of CPU threads to use w.r.t. `Sys.CPU_THREADS` count
@@ -23,7 +36,7 @@ MODEL:
     voll  : 3000.0                              # ::Float64 - Value of Lost Load
 
 PATH:
-    input  : ""                                 # ::String - Relative path to the folder containing the grid
+    input  : ""                                 # ::String - Relative path to the folder containing the grid file
     output : ""                                 # ::String - Relative path to the folder where the AC-OPF dataset is saved
 
 SOLVER:
