@@ -1,7 +1,7 @@
 name = "HEDGeOPF"
 uuid = "10b350bf-8e66-4de7-a795-ad4a5fc5a246"
 authors = ["Matteo Baù", "Luca Perbellini"]
-version = "0.1.0-DEV"
+version = "0.2.0"
 
 [deps]
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
