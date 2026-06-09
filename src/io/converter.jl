@@ -141,7 +141,7 @@ function convert_dataset(path::String;
                 _DF.insertcols!(df, 1, :uid => uids)
 
                 filepath = joinpath(dst, String(comp_dst), "$(var_dst)-$i.parquet")
-                _write_parquet!(db, df, filepath)
+                _write_parquet(db, df, filepath)
             end
         end
         append!(map.uid, uids)
@@ -150,7 +150,7 @@ function convert_dataset(path::String;
         c += size(data, 1)
     end
     map = _DF.DataFrame(Dict(k => getfield(map, k) for k in propertynames(map)))
-    _write_parquet!(db, map, joinpath(dst, "map.parquet"))
+    _write_parquet(db, map, joinpath(dst, "map.parquet"))
     _DDB.DBInterface.close(db)
     _copy_topologies(dst)
     return nothing
