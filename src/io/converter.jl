@@ -265,7 +265,7 @@ function process_fold(
             array = _DF.DataFrame(permutedims(pop!(value, var)), Symbol.(1:dims[comp]))
             _DF.insertcols!(array, 1, :uid => map.uid)
 
-            _write_parquet!(db, array, joinpath(dst, String(comp), name))
+            _write_parquet(db, array, joinpath(dst, String(comp), name))
         end
     end
     return map
@@ -314,7 +314,7 @@ function convert_dataset(path::String;
         push!(map, process_fold(i, chunk, index, dims, dst, db))
     end
     map = reduce(vcat, map)
-    _write_parquet!(db, map, joinpath(dst, "map.parquet"))
+    _write_parquet(db, map, joinpath(dst, "map.parquet"))
     _DDB.DBInterface.close(db)
     _copy_topologies(dst)
     return nothing
