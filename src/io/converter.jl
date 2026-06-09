@@ -173,11 +173,11 @@ function convert_dataset(path::String;
                 _DF.insertcols!(df, 1, :uid => uids)
 
                 filepath = joinpath(dst, comp, "$(var)-$fold.parquet")
-                _write_parquet!(db, df, filepath)
+                _write_parquet(db, df, filepath)
             end
         end
     end
-    _write_parquet!(db, map, joinpath(dst, "map.parquet"))
+    _write_parquet(db, map, joinpath(dst, "map.parquet"))
     _DDB.DBInterface.close(db)
     _copy_topologies(dst)
     return nothing
