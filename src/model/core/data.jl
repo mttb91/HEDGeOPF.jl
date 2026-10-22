@@ -26,9 +26,9 @@ function compute_load_active_bounds(network::Dict{String, <:Any}, settings::Dict
     ref, vars, vars_new = "load", ["pd"], ["pmin", "pmax"]
 
     # Get relevant settings
-    delta_pd = settings["delta_pd"] / 100
+    delta_down, delta_up = get_delta_range(settings["delta_pd"]) ./ 100
     # Compute minimum and maximum load active power bounds
-    data = repeat(get_pm_value(network, ref, vars, Array{Any, 2}), 1, 2) .* [1 - delta_pd 1 + delta_pd]
+    data = repeat(get_pm_value(network, ref, vars, Array{Any, 2}), 1, 2) .* [1 - delta_down 1 + delta_up]
     return vars_new, sort(data, dims=2)
 end
 
@@ -40,11 +40,11 @@ function compute_load_reactive_bounds(network::Dict{String, <:Any}, settings::Di
     min_pf = settings["min_pf"]
     max_pf = settings["max_pf"]
     delta_pf = settings["delta_pf"]
-    delta_qd = settings["delta_qd"] / 100
+    delta_down, delta_up = get_delta_range(settings["delta_qd"]) ./ 100
     # Get the base loading setpoints
     data = get_pm_value(network, ref, vars, _DF.DataFrame)
     # Compute minimum and maximum load reactive power bounds
-    bounds = sort(repeat(data.qd, 1, 2) .* [1 - delta_qd 1 + delta_qd], dims=2)
+    bounds = sort(repeat(data.qd, 1, 2) .* [1 - delta_down 1 + delta_up], dims=2)
     # Compute minimum power factor reduced by pre-defined threshold accounting for reactive power sign
     _DF.transform!(data, vars => ((x, y) -> cos.(atan.(./(y, x)))) => "pf")
     _DF.transform!(data,

@@ -49,19 +49,25 @@ function check_settings(settings::Dict{String, <:Any})
     @assert value[key] > 0 "Option `$key` cannot be zero because serial dataset generation does not work. "
 
     value = settings["SAMPLING"]
-    for key in ["delta_pd", "delta_qd", "delta_pf", "max_pf", "min_pf"]
+    for key in ["delta_pd", "delta_qd"]
+        @assert is_delta_range(value[key]) (
+            "Option `$key` must be of Float64 type or a pair of Float64 values [down, up]."
+        )
+    end
+    for key in ["delta_pf", "max_pf", "min_pf"]
         @assert isa(value[key], Float64) "Option `$key` must be of Float64 type."
     end
-    
+
     key = "delta_pd"
-    @assert value[key] > 0 "Invalid value for option `$key`: $(value[key]). It must be positive."
-    @assert value[key] <= 100 (
+    delta_down, delta_up = get_delta_range(value[key])
+    @assert (delta_down > 0) & (delta_up > 0) "Invalid value for option `$key`: $(value[key]). It must be positive."
+    @assert delta_down <= 100 (
         """
-        Invalid value for option `$key`: $(value[key])%. This value represents the percentage range of variation 
-        in active power around the nominal loading scenario. It must not exceed 100%, as the active power of a 
-        single load cannot be unrestricted in sign. To create a negative (positive) load at a bus that has already 
-        a positive (negative) one, add a new load to the power system dictionary or .m file with negative (positive) 
-        nominal active power. 
+        Invalid value for option `$key`: $(value[key])%. This value represents the percentage range of variation
+        in active power around the nominal loading scenario. Its lower side must not exceed 100%, as the active
+        power of a single load cannot be unrestricted in sign. To create a negative (positive) load at a bus that
+        has already a positive (negative) one, add a new load to the power system dictionary or .m file with
+        negative (positive) nominal active power.
         """
     )
     for key in ["delta_pf", "min_pf", "max_pf"]
@@ -77,3 +83,12 @@ function check_settings(settings::Dict{String, <:Any})
     end
     return nothing
 end
+
+"Check if `value` is a valid load variation range, i.e. a Float64 or a pair of Float64 values [down, up]"
+is_delta_range(::Float64) = true
+is_delta_range(value::AbstractVector) = (length(value) == 2) && all(isa.(value, Float64))
+is_delta_range(::Any) = false
+
+"Return the downward and upward percentage variations of a symmetric (scalar) or asymmetric (pair) range"
+get_delta_range(value::Float64) = (value, value)
+get_delta_range(value::AbstractVector) = (value[1], value[2])
