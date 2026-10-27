@@ -59,6 +59,38 @@ function compute_load_reactive_bounds(network::Dict{String, <:Any}, settings::Di
     return vars_new, hcat(bounds, ratios)
 end
 
+"""
+    clip_gen_negative_pmin!(network::Dict{String, <:Any}; atol::Float64 = 1e-3)
+
+Set to zero the negative active power lower bound of generators with `pmin < 0 < pmax`
+and positive linear cost coefficient. With a cost linear in `pg`, these units would be
+rewarded for consuming power as long as cheaper units are available to balance it.
+
+## Notes
+
+Generators with `pmax <= atol` (e.g. dispatchable loads) are left unmodified, so that
+clipping does not result in a degenerate or infeasible active power range. The tolerance
+`atol` is expressed in MW and converted to per unit based on the network `baseMVA`.
+"""
+function clip_gen_negative_pmin!(network::Dict{String, <:Any}; atol::Float64 = 1e-3)
+
+    ref, vars = "gen", ["pmin", "pmax", "cost", "ncost"]
+    data = get_pm_value(network, ref, vars, _DF.DataFrame)
+    # Linear coefficient of polynomial cost (zero if not defined)
+    c1 = [n >= 2 ? c[end - 1] : 0.0 for (c, n) in zip(data.cost, data.ncost)]
+    mask = findall(
+        (data.pmin .< 0) .& (data.pmax .> atol / network["baseMVA"])
+        .& (c1 .> 0)
+    )
+
+    if !isempty(mask)
+        ids = get_pm_value(network, ref, ["index"], Array{Any, 2}; mask = mask)
+        @warn "Negative pmin set to zero for generators $(vec(ids))."
+        set_pm_value!(network, ref, ["pmin"], 0.0; mask = mask)
+    end
+    return nothing
+end
+
 "Return mask of specifying if generators are synchronous condensers"
 function is_synchronous(network::Dict{String, <:Any})
 
