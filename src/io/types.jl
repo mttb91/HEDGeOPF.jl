@@ -13,7 +13,7 @@ Base.@kwdef struct TopologyPerturbation
     ids_ref::Vector{Int} = Int[]
     ids_gen::Vector{Int} = Int[]
     ids_gen_faulted::Vector{Int} = Int[]
-    pg_tot_bounds::Vector{Float64}
+    pd_tot_bounds::Vector{Float64}
 end
 
 Base.@kwdef mutable struct InputData
