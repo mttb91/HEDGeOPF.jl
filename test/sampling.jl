@@ -44,6 +44,27 @@
             err = @test_throws ArgumentError perturb_generation(pm, rng, k_min, k_max)
             @test occursin("Unable to generate a valid generation perturbation", err.value.msg)
         end
+
+        @testset "perturb generation with empty range of total load active power" begin
+
+            # Set aggregate load limits so that the range is non-empty for the intact topology,
+            # but empty as soon as any generator is faulted
+            net = deepcopy(DATA["5_pjm"]["net"])
+            pg_max = vec(get_pm_value(pm, :gen, ["pmax"], Array{Any, 2}))
+            pd_max = vec(get_pm_value(pm, :load, ["pmax"], Array{Any, 2}))
+            margin = minimum(filter(>(0), pg_max)) / 2
+            pd_max = pd_max .* (sum(pg_max) / sum(pd_max))
+            set_pm_value!(net, "load", ["pmax"], pd_max)
+            set_pm_value!(net, "load", ["pmin"], pd_max .* (1 - margin / sum(pg_max)))
+            pm_new = instantiate_model(net, "ACP", to_namedtuple(setup))
+
+            rng = HEDGeOPF._RND.MersenneTwister(1234)
+            err = @test_throws ArgumentError perturb_generation(pm_new, rng, 1, 1)
+            @test occursin("Unable to generate a valid generation perturbation", err.value.msg)
+            # Perturbations leaving all generators in service remain valid
+            seq = [perturb_generation(pm_new, rng, 0, 1) for _ in 1:20]
+            @test all(isempty, getfield.(seq, :ids_gen_faulted))
+        end
     end
 
     @testset "test topology perturbation" begin
@@ -128,13 +149,29 @@
             @test isempty(t.ids_gen)
             @test isempty(t.ids_gen_faulted)
 
-            bounds_tot = vec(sum(get_pm_value(pm, :gen, ["pmin", "pmax"], Array{Any, 2}), dims = 1))
-            @test t.pg_tot_bounds == bounds_tot
+            @test t.pd_tot_bounds == total_load_active_power_bounds(pm)
 
             t = first(iterate(gen))
             @test t.id == 2
             @test !isempty(t.ids_branch)
             @test !isempty(t.ids_ref)
+        end
+
+        @testset "topology generator with empty range of total load active power" begin
+
+            # Set aggregate load minimum above the aggregate generator maximum
+            net = deepcopy(DATA["14_ieee"]["net"])
+            pg_max = sum(get_pm_value(pm, :gen, ["pmax"], Array{Any, 2}))
+            pd_max = vec(get_pm_value(pm, :load, ["pmax"], Array{Any, 2}))
+            pd_max = pd_max .* (3 * pg_max / sum(pd_max))
+            set_pm_value!(net, "load", ["pmax"], pd_max)
+            set_pm_value!(net, "load", ["pmin"], pd_max ./ 2)
+            pm_new = instantiate_model(net, "ACP", settings)
+
+            rng = HEDGeOPF._RND.MersenneTwister(1234);
+            generator = TopologyPerturbationGenerator(model = pm_new, rng = rng, setting = settings);
+            err = @test_throws ArgumentError iterate(generator)
+            @test occursin("Empty range", err.value.msg)
         end
 
         @testset "topology generator iteration with fixed topology" begin
@@ -162,14 +199,13 @@
             settings = to_namedtuple(setup)
             rng = HEDGeOPF._RND.MersenneTwister(1234);
             gen = TopologyPerturbationGenerator(model = pm, rng = rng, setting = settings);
-            bounds_pg = get_pm_value(pm, :gen, ["pmin", "pmax"], Array{Any, 2})
 
             check1, check2 = Bool[], Bool[]
             for t in gen
-                bounds_pg_perturbed = vec(sum(bounds_pg[setdiff(ids_gen, t.ids_gen_faulted), :], dims=1))
-                push!(check1, isequal(t.pg_tot_bounds, bounds_pg_perturbed))
+                bounds_perturbed = total_load_active_power_bounds(pm; ids_gen_excluded = t.ids_gen_faulted)
+                push!(check1, isequal(t.pd_tot_bounds, bounds_perturbed))
                 # Generator perturbations that result in no eligible ref bus should be discarded
-                push!(check2, bounds_pg_perturbed[end] > 0.0)
+                push!(check2, bounds_perturbed[end] > 0.0)
             end
             @test all(check1)
             @test all(check2)
@@ -197,7 +233,7 @@
             @test ids_map == ids_topo
             # Test 4: each topology's bounds matches mapping key
             check = Bool[]
-            lookup = Dict(getfield.(topologies, :id) .=> getfield.(topologies, :pg_tot_bounds))
+            lookup = Dict(getfield.(topologies, :id) .=> getfield.(topologies, :pd_tot_bounds))
             for (bounds_key, ids_in_group) in mapping
                 for id in ids_in_group
                     push!(check, lookup[id] == bounds_key)

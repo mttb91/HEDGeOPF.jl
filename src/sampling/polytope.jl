@@ -122,8 +122,11 @@ The following load constraints are accounted for each load in this exact order:
 - maximum reactive power as `-q <= -qmin`
 - maximum reactive power as `-p * rmax + q <= 0`
 - minimum reactive power as `p * rmin - q <= 0`
-- maximum total active power consumption as `sum(p) <= sum(pg_max)`
-- minimum total active power consumption as `-sum(p) <= -sum(pg_min)`
+- maximum total active power consumption as `sum(p) <= min(sum(pg_max), sum(pd_max))`
+- minimum total active power consumption as `-sum(p) <= -max(sum(pg_min), sum(pd_min))`
+
+The total active power limits are computed by `total_load_active_power_bounds` and
+shifted by the active power of fixed loads.
 
 Fixed loads (equal lower and upper bounds) are not accounted for in the
 polytope definition. Similarly, the p-q coupling constraint is not
@@ -167,12 +170,15 @@ function instantiate_polytope(model::_PM.AbstractPowerModel)
     # Min total active demand constraint
     pd_min_tot = hcat(-ones(1, nvar_pd), zeros(1, nvar_qd))
 
+    # Total active demand limits from aggregate generator and load limits
+    pd_tot_bounds = total_load_active_power_bounds(model)
+
     A = vcat(pd_max, pd_min, qd_max, qd_min, qd_ratio_max, qd_ratio_min, pd_max_tot, pd_min_tot)
     b = vcat(pd.pmax, -pd.pmin, qd.qmax, -qd.qmin,
         zeros(sum(mask)),
         zeros(sum(mask)),
-        sum(get_pm_value(model, :gen, ["pmax"], Array{Any, 2})) - pd_res,
-        -sum(get_pm_value(model, :gen, ["pmin"], Array{Any, 2})) + pd_res
+        pd_tot_bounds[2] - pd_res,
+        -pd_tot_bounds[1] + pd_res
     )
 
 	return (A = A, b = b, ids = ids)::PolyType

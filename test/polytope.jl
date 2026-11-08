@@ -83,4 +83,24 @@ end
         @test !in(last(ids), last(p.ids))
         @test !_isempty(p, nt)
     end
+
+    @testset "polytope generation with binding aggregate load limits" begin
+
+        # Scale load limits so that the aggregate load range lies within the generator one
+        net1 = deepcopy(net)
+        pmax = load.pmax .* (sum(gen.pmax) / 2 / sum(load.pmax))
+        set_pm_value!(net1, "load", ["pmax"], pmax)
+        set_pm_value!(net1, "load", ["pmin"], pmax ./ 2)
+        pm1 = instantiate_model(net1, "ACP", nt)
+        p = instantiate_polytope(pm1)
+        bounds = total_load_active_power_bounds(pm1)
+
+        @test bounds[1] > sum(gen.pmin)
+        @test bounds[2] < sum(gen.pmax)
+        @test isapprox(p.b[end - 1], bounds[2]; atol = 1e-8)
+        @test isapprox(p.b[end], -bounds[1]; atol = 1e-8)
+        @test !_isempty(p, nt)
+        @test isapprox(load_power_bound(p, nt; var="pd", upper=true), bounds[2]; atol = 1e-6)
+        @test isapprox(load_power_bound(p, nt; var="pd", upper=false), bounds[1]; atol = 1e-6)
+    end
 end

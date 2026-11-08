@@ -66,7 +66,8 @@ end
 
 Generate a single generation perturbation by removing between `k_min` and `k_max` generators
 at random as long as at least an eligible reference generator candidate is retained in the
-model `pm`. Returns a named tuple with:
+model `pm` and the resulting range of total load active power is not empty. Returns a named
+tuple with:
 - `ids_gen_faulted`: the ids of faulted generators
 - `ids_bus_ref_valid`: the ids of remaining eligible reference bus candidates
 """
@@ -94,8 +95,10 @@ function perturb_generation(pm::_PM.AbstractPowerModel, rng::_RND.AbstractRNG, k
                 ids = Vector{Int}()
             end
             # Keep pertrubation only if eligible reference generators are retained
+            # and the range of total load active power is not empty
             if !isempty(setdiff(ids_gen_valid, ids))
-                break
+                bounds = total_load_active_power_bounds(pm; ids_gen_excluded = ids)
+                bounds[1] < bounds[2] && break
             end
             if count > 10000
                 msg = (
@@ -123,10 +126,9 @@ function Base.iterate(gen::TopologyPerturbationGenerator, state::Nothing = nothi
     pm = gen.model
     if gen.state === 1
         # Generate intact topology at first iteration
-        limits = vec(sum(get_pm_value(pm, :gen, ["pmin", "pmax"], Array{Any, 2}), dims=1))
         perturbation = TopologyPerturbation(
             id = gen.state,
-            pg_tot_bounds = limits
+            pd_tot_bounds = total_load_active_power_bounds(pm)
         )
     else
         p_gen = perturb_generation(
@@ -139,11 +141,10 @@ function Base.iterate(gen::TopologyPerturbationGenerator, state::Nothing = nothi
 
         # Add here additional perturbations
 
-        # Compute limits in total generator active power for given topology
-        ids_gen = sort(collect(_PM.ids(pm, :gen)))
-        ids_gen_remove = Set(sort(vcat(p_branch.ids_gen, p_gen.ids_gen_faulted)))
-        limits = get_pm_value(pm, :gen, ["pmin", "pmax"], Array{Any, 2};
-            mask = findall(x -> !in(x, ids_gen_remove), ids_gen)
+        # Compute limits in total load active power for given topology
+        limits = total_load_active_power_bounds(pm;
+            ids_gen_excluded = vcat(p_branch.ids_gen, p_gen.ids_gen_faulted),
+            ids_bus_excluded = p_branch.ids_bus
         )
 
         perturbation = TopologyPerturbation(
@@ -153,8 +154,17 @@ function Base.iterate(gen::TopologyPerturbationGenerator, state::Nothing = nothi
             p_branch.ids_ref,
             p_branch.ids_gen,
             p_gen.ids_gen_faulted,
-            vec(sum(limits, dims=1))
+            limits
         )
+    end
+    # Uniform sampling in total load active power requires a non-empty range
+    limits = perturbation.pd_tot_bounds
+    if !(limits[1] < limits[2])
+        msg = (
+            "Empty range $limits of total load active power for topology $(gen.state). " *
+            "Please check the generator and load active power limits."
+        )
+        throw(ArgumentError(msg))
     end
     gen.state += 1
     return (perturbation, nothing)
@@ -172,7 +182,7 @@ function generate_topologies(generator::TopologyPerturbationGenerator, num::Int)
     topologies = Vector{TopologyPerturbation}()
     for (i, t) in enumerate(generator)
         push!(topologies, t)
-        key = t.pg_tot_bounds
+        key = t.pd_tot_bounds
         if !haskey(mapping, key)
             mapping[key] = [t.id]
         else
@@ -301,7 +311,7 @@ function generate_load_samples!(
     ids = reduce(vcat, collect(values(map_dist)))
     pd_tot = pd_tot[sortperm(ids)]
     pd_tot = reduce(vcat, pd_tot)
-    ranges = getfield.(getfield.(samples, :topology), :pg_tot_bounds)
+    ranges = getfield.(getfield.(samples, :topology), :pd_tot_bounds)
     bounds = hcat(
         min.(pd_tot .+ 0.01, last.(ranges)),
         max.(pd_tot .- 0.01, first.(ranges))
@@ -366,7 +376,7 @@ function generate_input_samples!(
 
     map_dist = Dict{_DIST.Distribution, Vector{Int}}()
     for t in topologies
-        key = t.pg_tot_bounds
+        key = t.pd_tot_bounds
         a, b = copy(key)
         # Use already-refined distribution bounds if available
         if !isempty(bounds_max)

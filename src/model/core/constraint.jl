@@ -25,11 +25,11 @@ function constraint_load_fixed_and_slack_active_power(pm::_PM.AbstractPowerModel
     return nothing
 end
 
-function constraint_load_total_fixed_and_slack_active_power(pm::_PM.AbstractPowerModel, n::Int, pg_min::Float64, pg_max::Float64)
+function constraint_load_total_fixed_and_slack_active_power(pm::_PM.AbstractPowerModel, n::Int, pd_min::Float64, pd_max::Float64)
 
     pd = _PM.var(pm, n, :pd_fix) .+_PM.var(pm, n, :pd_slack_down) .-_PM.var(pm, n, :pd_slack_up)
 
-    JuMP.@constraint(pm.model, pd_tot[i = 1:2], [-sum(pd), sum(pd)][i] <= [-pg_min, pg_max][i])
+    JuMP.@constraint(pm.model, pd_tot[i = 1:2], [-sum(pd), sum(pd)][i] <= [-pd_min, pd_max][i])
 end
 
 function expression_load_power(pm::_PM.AbstractPowerModel; kwargs...)

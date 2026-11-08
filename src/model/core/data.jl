@@ -140,6 +140,40 @@ function define_ref_bus(pm::_PM.AbstractPowerModel, buses::Vector{Int}, bus_gen_
 end
 
 """
+    total_load_active_power_bounds(pm::_PM.AbstractPowerModel;
+        ids_gen_excluded::Vector{Int} = Int[], ids_bus_excluded::Vector{Int} = Int[]
+    )
+
+Return the `[lower, upper]` limits on total load active power of PowerModels model `pm` as
+the intersection of the aggregate generator and aggregate load active power limits:
+
+    [max(Σpg_min, Σpd_min), min(Σpg_max, Σpd_max)]
+
+Generators with ids in `ids_gen_excluded` (e.g. faulted or disconnected) and loads connected
+to buses in `ids_bus_excluded` (de-energised, as handled in `update_topology`) are left out
+of the sums. Fixed loads (`pmin == pmax`) are included.
+
+## Notes
+
+The ids in `ids_gen_excluded` and `ids_bus_excluded` are matched by membership, so they do
+not need to be sorted or unique.
+"""
+function total_load_active_power_bounds(pm::_PM.AbstractPowerModel;
+    ids_gen_excluded::Vector{Int} = Int[], ids_bus_excluded::Vector{Int} = Int[]
+)
+    gen = get_pm_value(pm, :gen, ["index", "pmin", "pmax"], _DF.DataFrame)
+    load = get_pm_value(pm, :load, ["load_bus", "pmin", "pmax"], _DF.DataFrame)
+    # Filter on ids rather than using `mask`, which treats an empty mask as "keep all"
+    gen = gen[.!in.(gen.index, Ref(Set(ids_gen_excluded))), :]
+    load = load[.!in.(load.load_bus, Ref(Set(ids_bus_excluded))), :]
+
+    return Float64[
+        max(sum(gen.pmin), sum(load.pmin)),
+        min(sum(gen.pmax), sum(load.pmax))
+    ]
+end
+
+"""
     update_topology(pm_ref::_PM.AbstractPowerModel, topology::TopologyPerturbation)
 
 Update the `ref` dictionary of a PowerModel model `pm_ref` based on `topology` perturbation,

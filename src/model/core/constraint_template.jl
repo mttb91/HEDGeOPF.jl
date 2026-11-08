@@ -75,10 +75,9 @@ end
 "Formulation-agnostic constraint on load total active power"
 function constraint_load_total_fixed_and_slack_active_power(pm::_PM.AbstractPowerModel; nw::Int=_PM.nw_id_default)
 
-    pg_min = sum(k["pmin"] for k in values(_PM.ref(pm, nw, :gen)))
-    pg_max = sum(k["pmax"] for k in values(_PM.ref(pm, nw, :gen)))
+    pd_min, pd_max = total_load_active_power_bounds(pm)
 
-    return constraint_load_total_fixed_and_slack_active_power(pm, nw, pg_min, pg_max)
+    return constraint_load_total_fixed_and_slack_active_power(pm, nw, pd_min, pd_max)
 end
 
 function constraint_thermal_limit_from(pm::_PM.AbstractPowerModel, i::Int; nw::Int=_PM.nw_id_default)
