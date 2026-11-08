@@ -194,7 +194,7 @@ function update_topology(pm_ref::_PM.AbstractPowerModel, topology::TopologyPertu
     # Set to PV only connected buses with non faulted generation
     bus_pv = get_pm_value(pm, :gen, ["gen_bus", "gen_status"], Array{Any, 2}; mask=ids_mask_active)
     bus_pv = bus_pv[bus_pv[:, 2] .== 1, 1]
-    bus_pv = setdiff(unique(bus_pv), bus_notpv)
+    bus_pv = sort(setdiff(unique(bus_pv), bus_notpv))
     if !isempty(bus_pv)
         set_pm_value!(pm, :bus, ["bus_type"], 2; mask=bus_pv)
     else
