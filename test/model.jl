@@ -60,20 +60,62 @@
             end
         end
 
+        @testset "total load active power bounds" begin
+
+            gen = get_pm_value(pm, :gen, ["index", "pmin", "pmax"], _DF.DataFrame)
+            load = get_pm_value(pm, :load, ["load_bus", "pmin", "pmax"], _DF.DataFrame)
+
+            @testset "intersection of generator and load limits" begin
+                bounds = [max(sum(gen.pmin), sum(load.pmin)), min(sum(gen.pmax), sum(load.pmax))]
+                @test isapprox(total_load_active_power_bounds(pm), bounds; atol = 1e-8)
+            end
+
+            @testset "aggregate load limits are binding" begin
+                # Scale load limits so that the aggregate load range lies within the generator one
+                net = deepcopy(DATA["14_ieee"]["net"])
+                pmax = load.pmax .* (sum(gen.pmax) / 2 / sum(load.pmax))
+                set_pm_value!(net, "load", ["pmax"], pmax)
+                set_pm_value!(net, "load", ["pmin"], pmax ./ 2)
+                pm_new = instantiate_model(net, "ACP", settings)
+                load_new = get_pm_value(pm_new, :load, ["load_bus", "pmin", "pmax"], _DF.DataFrame)
+
+                bounds = total_load_active_power_bounds(pm_new)
+                @test bounds[1] > sum(gen.pmin)
+                @test bounds[2] < sum(gen.pmax)
+                @test isapprox(bounds, [sum(load_new.pmin), sum(load_new.pmax)]; atol = 1e-8)
+
+                @testset "excluded generators and buses" begin
+                    # Excluded ids need not be sorted nor unique
+                    ids_gen = [3, 1, 3]
+                    ids_bus = [first(load_new.load_bus), first(load_new.load_bus)]
+                    bounds = total_load_active_power_bounds(pm_new;
+                        ids_gen_excluded = ids_gen, ids_bus_excluded = ids_bus
+                    )
+                    gen_kept = gen[.!in.(gen.index, Ref(ids_gen)), :]
+                    load_kept = load_new[.!in.(load_new.load_bus, Ref(ids_bus)), :]
+                    bounds_kept = [
+                        max(sum(gen_kept.pmin), sum(load_kept.pmin)),
+                        min(sum(gen_kept.pmax), sum(load_kept.pmax))
+                    ]
+                    @test isapprox(bounds, bounds_kept; atol = 1e-8)
+                end
+            end
+        end
+
         @testset "generate new reference model aligned with topology perturbation" begin
 
             get_sol = sol -> Dict(
                 var => get_pm_value(sol, comp, [var], Array{Any, 2})
                 for (var, comp) in zip(["va", "vm", "pg", "qg"], ["bus", "bus", "gen", "gen"])
             )
-            pg_bounds = vec(sum(get_pm_value(pm, :gen, ["pmin", "pmax"], Array{Any, 2}), dims=1))
-            
+            pd_bounds = total_load_active_power_bounds(pm)
+
             @testset "bus type consistency with unmodified reference bus" begin
 
                 t = TopologyPerturbation(
                     id = 1,
                     ids_gen_faulted = [2],
-                    pg_tot_bounds = pg_bounds
+                    pd_tot_bounds = pd_bounds
                 )
                 pm_new = update_topology(pm, t);
                 bus_type = vec(get_pm_value(pm_new, :bus, ["bus_type"], Array{Any, 2}))
@@ -92,7 +134,7 @@
                 ids_ref = [2, 6],
                 ids_gen = [4, 5],
                 ids_gen_faulted = [1],
-                pg_tot_bounds = pg_bounds
+                pd_tot_bounds = pd_bounds
             )
             pm_new = update_topology(pm, t);
 
