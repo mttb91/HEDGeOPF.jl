@@ -36,7 +36,7 @@ As detailed in the reference [publication](https://arxiv.org/abs/2508.19083), lo
 
 * per-load lower and upper limits on active and reactive power;
 * per-load two-sided constraints on the coupling between active and reactive power;
-* minimum and maximum limits on total load active power, which depend on the total installed active generator capacity;
+* minimum and maximum limits on total load active power, defined as the intersection of the aggregate active power limits of generators and loads;
 
 where the per-load limits can be controlled (in a basic, limited way) through the [`SAMPLING` Options](@ref "sampling-options") of the YAML configuration file.
 
