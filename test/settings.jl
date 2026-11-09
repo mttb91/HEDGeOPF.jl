@@ -24,6 +24,43 @@
         @test all(haskey.(Ref(setup["TOPOLOGY"]), ["k_min_gen", "k_max_gen", "k_min_branch", "k_max_branch", "num_topo"]))
     end
 
+    @testset "Symmetric and asymmetric load bounds" begin
+        for key in ["delta_pd", "delta_qd"]
+            for value in (50.0, Any[50.0, 140.0], [50.0, 140.0])
+                s = deepcopy(setup)
+                s["SAMPLING"][key] = value
+                @test check_settings(s) === nothing
+            end
+            # Wrong type or number of values
+            for value in (Any[50.0, 60.0, 70.0], Any[50.0])
+                s = deepcopy(setup)
+                s["SAMPLING"][key] = value
+                @test_throws ArgumentError check_settings(s)
+            end
+            for value in (Any[50.0, 60], "50", 50)
+                s = deepcopy(setup)
+                s["SAMPLING"][key] = value
+                @test_throws AssertionError check_settings(s)
+            end
+        end
+        # Reactive power: both sides must be positive
+        for value in (0.0, -10.0, Any[0.0, 50.0], Any[50.0, -10.0])
+            s = deepcopy(setup)
+            s["SAMPLING"]["delta_qd"] = value
+            @test_throws AssertionError check_settings(s)
+        end
+        # Active power: both sides must be positive and the lower side cannot exceed 100%
+        for value in (Any[0.0, 50.0], Any[50.0, -10.0], Any[110.0, 50.0])
+            s = deepcopy(setup)
+            s["SAMPLING"]["delta_pd"] = value
+            @test_throws AssertionError check_settings(s)
+        end
+        # The upper side may exceed 100%
+        s = deepcopy(setup)
+        s["SAMPLING"]["delta_pd"] = Any[100.0, 140.0]
+        @test check_settings(s) === nothing
+    end
+
     for (key, value) in zip(
         ["delta_pd", "delta_qd", "delta_pf", "max_pf", "min_pf"],
         [100.0, 100.0, 0.05, 0.99, 0.01]

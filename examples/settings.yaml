@@ -15,8 +15,8 @@ TOPOLOGY:
     num_topo     : 50                           # ::Int64 - Total number of perturbations to be generated
 
 SAMPLING:
-    delta_pd    : 100.0                         # ::Float64 - Percentage variation in load active power around the nominal values
-    delta_qd    : 100.0                         # ::Float64 - Percentage variation in load reactive power around the nominal values
+    delta_pd    : [100.0, 140.0]                # ::Union{Float64, Vector{Float64}} - Percentage variation in load active power around the nominal values
+    delta_qd    : 100.0                         # ::Union{Float64, Vector{Float64}} - Percentage variation in load reactive power around the nominal values
     delta_pf    : 0.05                          # ::Float64 - Maximum reduction in power factor w.r.t. the nominal absolute value
     max_pf      : 0.99                          # ::Float64 - Maximum allowable load power factor
     min_pf      : 0.01                          # ::Float64 - Minimum allowable load power factor

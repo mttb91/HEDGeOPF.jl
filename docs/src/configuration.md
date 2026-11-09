@@ -99,7 +99,10 @@ These options control how the input sampling space is created. Currently, it con
 | `min_pf`       | `Float64` | [1]  | Minimum allowable load power factor                                       |
 
 !!! note
-    The value `delta_pd` cannot exceed 100% since the active power of a load cannot be unrestricted in sign to preserve the sign relation between active and reactive power. To create a load with negative (positive) active power at a bus that already has a positive (negative) one, add a new load to the power system dictionary or .m file with negative (positive) nominal active power.
+    Properties `delta_pd` and `delta_qd` can be optionally defined as asymmetrical with respect to the nominal setpoint by passing a two-value array `[down, up]` of positive values indicating the downward and upward percentage change, respectively.
+
+!!! note
+    The value `delta_pd`, if symmetric, or the downward change entry of `delta_pd` if asymmetric, cannot exceed 100%. This is due to the fact that the active power of a load needs to be restricted in sign to preserve the sign relation between active and reactive power. To create a load with negative (positive) active power at a bus that already has a positive (negative) one, add a new load to the power system dictionary or .m file with negative (positive) nominal active power.
 
 ## [`PARALLEL` Options](@id parallel-options)
 

@@ -49,19 +49,30 @@ function check_settings(settings::Dict{String, <:Any})
     @assert value[key] > 0 "Option `$key` cannot be zero because serial dataset generation does not work. "
 
     value = settings["SAMPLING"]
-    for key in ["delta_pd", "delta_qd", "delta_pf", "max_pf", "min_pf"]
+    for key in ["delta_pd", "delta_qd"]
+        @assert isa(value[key], Float64) || (isa(value[key], AbstractVector) && all(isa.(value[key], Float64))) (
+            "Option `$key` must be of Float64 type or a pair of Float64 values [down, up]."
+        )
+        if isa(value[key], AbstractVector) && length(value[key]) != 2
+            throw(ArgumentError("Option `$key` must have either a single value or two values [down, up]."))
+        end
+        @assert all((isa(value[key], Float64) ? [value[key]] : value[key]) .> 0.0) (
+            "Invalid value for option `$key`: $(value[key]). It must be positive."
+        )
+    end
+    for key in ["delta_pf", "max_pf", "min_pf"]
         @assert isa(value[key], Float64) "Option `$key` must be of Float64 type."
     end
     
     key = "delta_pd"
-    @assert value[key] > 0 "Invalid value for option `$key`: $(value[key]). It must be positive."
-    @assert value[key] <= 100 (
+    delta_down, _ = isa(value[key], AbstractVector) ? value[key] : fill(value[key], 2)
+    @assert delta_down <= 100 (
         """
-        Invalid value for option `$key`: $(value[key])%. This value represents the percentage range of variation 
-        in active power around the nominal loading scenario. It must not exceed 100%, as the active power of a 
-        single load cannot be unrestricted in sign. To create a negative (positive) load at a bus that has already 
-        a positive (negative) one, add a new load to the power system dictionary or .m file with negative (positive) 
-        nominal active power. 
+        Invalid value for option `$key`: $(value[key])%. This value represents the percentage range of variation
+        in active power around the nominal loading scenario. Its lower side must not exceed 100%, as the active
+        power of a single load cannot be unrestricted in sign. To create a negative (positive) load at a bus that
+        has already a positive (negative) one, add a new load to the power system dictionary or .m file with
+        negative (positive) nominal active power.
         """
     )
     for key in ["delta_pf", "min_pf", "max_pf"]

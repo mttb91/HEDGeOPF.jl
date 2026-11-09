@@ -46,6 +46,47 @@
         @test isapprox(bounds, expected; atol = 1e-12)
     end
 
+    @testset "compute load active bounds with asymmetric variation" begin
+        net1 = deepcopy(net)
+        net1["load"]["1"]["pd"] *= -1
+        pd = vec(get_pm_value(net1, "load", ["pd"], Array{Any, 2}))
+        for delta in (Any[100.0, 140.0], Any[30.0, 10.0])
+            sampling = merge(setup["SAMPLING"], Dict("delta_pd" => delta))
+            _, bounds = compute_load_active_bounds(net1, sampling)
+            expected = sort(repeat(pd, 1, 2) .* [1 - delta[1] / 100 1 + delta[2] / 100], dims = 2)
+
+            @test all(bounds[:, 1] .<= bounds[:, 2])
+            @test isapprox(bounds, expected; atol = 1e-12)
+        end
+        # Explicit values: pd = +10 and -10 with [30, 10] -> [7, 11] and [-11, -7] (pmin <= pmax regardless of sign)
+        net2 = deepcopy(net)
+        net2["load"]["1"]["pd"], net2["load"]["2"]["pd"] = 10.0, -10.0
+        sampling = merge(setup["SAMPLING"], Dict("delta_pd" => Any[30.0, 10.0]))
+        _, bounds = compute_load_active_bounds(net2, sampling)
+        @test isapprox(bounds[1, :], [7.0, 11.0]; atol = 1e-12)
+        @test isapprox(bounds[2, :], [-11.0, -7.0]; atol = 1e-12)
+        # Equal sides reproduce the symmetric scalar case
+        s_sym = merge(setup["SAMPLING"], Dict("delta_pd" => 60.0))
+        s_asym = merge(setup["SAMPLING"], Dict("delta_pd" => Any[60.0, 60.0]))
+        @test compute_load_active_bounds(net1, s_sym) == compute_load_active_bounds(net1, s_asym)
+    end
+
+    @testset "compute load reactive bounds with asymmetric variation" begin
+        net1 = deepcopy(net)
+        net1["load"]["2"]["qd"] *= -1
+        qd = vec(get_pm_value(net1, "load", ["qd"], Array{Any, 2}))
+        delta = Any[100.0, 140.0]
+        sampling = merge(setup["SAMPLING"], Dict("delta_qd" => delta))
+        _, bounds = compute_load_reactive_bounds(net1, sampling)
+        expected = sort(repeat(qd, 1, 2) .* [1 - delta[1] / 100 1 + delta[2] / 100], dims = 2)
+
+        @test all(bounds[:, 1] .<= bounds[:, 2])
+        @test isapprox(bounds[:, 1:2], expected; atol = 1e-12)
+        s_sym = merge(setup["SAMPLING"], Dict("delta_qd" => 60.0))
+        s_asym = merge(setup["SAMPLING"], Dict("delta_qd" => Any[60.0, 60.0]))
+        @test compute_load_reactive_bounds(net1, s_sym) == compute_load_reactive_bounds(net1, s_asym)
+    end
+
     @testset "compute load reactive bounds" begin
         id_pd, id_qd = 1, 2
         net1 = deepcopy(net)
