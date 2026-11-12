@@ -45,6 +45,8 @@ SOLVER:
         solver            : "ipm"  
     nlp         : "Ipopt"                       # ::String - Julia package for nonlinear programming solver
     nlp_options :
+        tol               : 1.0E-8
+        constr_viol_tol   : 1.0E-4
         max_cpu_time      : 1000.0
         mumps_mem_percent : 10
         print_level       : 0

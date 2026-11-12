@@ -416,5 +416,42 @@
                 @test sol_dict["pg"][last(ids)] > 0.0
             end
         end
+
+        @testset "strict feasibility of OPF solution" begin
+
+            ids = sort(collect(_PM.ids(pm, :load)))
+            sd = get_pm_value(pm, :load, ["pd", "qd"], Array{Any, 2})
+            pd_max = vec(get_pm_value(pm, :load, ["pmax"], Array{Any, 2}))
+            bounds_pg = vec(sum(get_pm_value(pm, :gen, ["pmin", "pmax"], Array{Any, 2}), dims = 1))
+
+            solve_setpoints = (pd, qd) -> begin
+                pm_new = deepcopy(pm)
+                sample = Dict("load" => Dict(
+                    "pd" => InputData(pd, ids), "qd" => InputData(qd, ids)
+                ))
+                update_load_power!(pm_new, sample, bounds_pg)
+                _PM.optimize_model!(pm_new)
+                return pm_new
+            end
+
+            @testset "setpoints within generation capacity do not activate load slack" begin
+                pm_new = solve_setpoints(sd[:, 1], sd[:, 2])
+                @test JuMP.is_solved_and_feasible(pm_new.model)
+                @test is_strictly_feasible(pm_new, true)
+            end
+
+            @testset "setpoints above generation capacity activate load slack" begin
+                @test sum(pd_max) > last(bounds_pg)
+                pm_new = solve_setpoints(pd_max, sd[:, 2])
+                @test JuMP.is_solved_and_feasible(pm_new.model)
+                @test maximum(JuMP.value.(_PM.var(pm_new, 0, :pd_slack_up))) > JuMP.get_attribute(pm_new.model, "constr_viol_tol")
+                @test !is_strictly_feasible(pm_new, true)
+            end
+
+            @testset "infeasible solution is never strictly feasible" begin
+                # Slack variables are not accessed when the solution is not feasible
+                @test !is_strictly_feasible(deepcopy(pm), false)
+            end
+        end
     end
 end

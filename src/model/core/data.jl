@@ -275,6 +275,42 @@ end
 
 
 """
+    is_strictly_feasible(pm::_PM.AbstractPowerModel, feasible::Bool;
+        tol_name::String="constr_viol_tol",
+        nw::Int=_PM.nw_id_default,
+)
+
+Determine if a feasible AC-OPF solution requires activation of load slack variables.
+
+## Notes
+
+The instance is considered as strictly feasible if the maximum value among slack variables
+of the instance is smaller than a solver tolerance labelled as `tol_name`. This defaults to
+the tolerance on constraint violation "constr_viol_tol" used by the solver "Ipopt" at
+termination.
+"""
+function is_strictly_feasible(pm::_PM.AbstractPowerModel, feasible::Bool;
+    tol_name::String="constr_viol_tol",
+    nw::Int=_PM.nw_id_default,
+)
+    check = false
+    if feasible
+
+        tol = JuMP.get_attribute(pm.model, tol_name)
+        ls = Float64[]
+        for key in [:pd, :qd]
+            for side in [:down, :up]
+                var = Symbol("$(key)_slack_$(side)")
+                push!(ls, maximum(JuMP.value.(_PM.var(pm, nw, var))))
+            end
+        end
+        check = maximum(ls) <= tol
+    end
+    return check
+end
+
+
+"""
     fix_theta_ref!(pm::_PM.AbstractPowerModel, ids_fixed::Vector{Int};
         nw::Int=_PM.nw_id_default
     )

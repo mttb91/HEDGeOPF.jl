@@ -74,6 +74,7 @@
     setup["SOLVER"]["lp_options"] = Dict("solver" => "ipm")
     setup["SOLVER"]["nlp_options"] = Dict(
         "tol" => 1e-8,
+        "constr_viol_tol" => 1e-4,
         "max_cpu_time" => 1000.0,
         "print_level" => 0
     )
