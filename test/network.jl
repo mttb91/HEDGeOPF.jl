@@ -115,9 +115,8 @@
         net1["gen"][string(id_sync)]["pmax"] = 0.0
         set_pm_value!(net1, "gen", ["pmax", "qmax", "qmin"], 0.0; mask = [4])
         gen_ids = vec(get_pm_value(net1, "gen", ["index"], Array{Any, 2}))
-        vars, mask = is_synchronous(net1)
+        mask = is_synchronous(net1)
 
-        @test vars == ["is_synchronous"]
         @test isa(mask, BitVector) || isa(mask, Vector{Bool})
         @test all(isequal.(gen_ids[mask], [id_sync]))
         @test all(isequal.(gen_ids[.!mask], setdiff(gen_ids, [id_sync])))
