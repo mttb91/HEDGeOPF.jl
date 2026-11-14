@@ -4,6 +4,7 @@ using Test
 
 import HiGHS
 import Ipopt
+import Logging
 import HEDGeOPF: _DC, _PM, _DF, _RND, _DDB, JuMP, RCall, CSV, Statistics
 import HEDGeOPF: _isempty
 

@@ -3,7 +3,7 @@
 function export_data!(db::NamedTuple, worker::Int)
 
     fields = [:data, :dual_lb, :dual_ub]
-    for (element, entry) in filter(x -> !in(x.first, [:check, :info]), pairs(db))
+    for (element, entry) in filter(x -> !isequal(x.first, :info), pairs(db))
 
         element = string(element)
         _mkpath(element)

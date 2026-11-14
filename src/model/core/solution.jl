@@ -8,9 +8,12 @@ Base.@kwdef mutable struct InfoEntry
 end
 
 Base.@kwdef mutable struct NodeEntry{T}
+    locked::Bool = false 
     var::Symbol
     ids::Vector{Int}
+    pos::AbstractVector{Int} = Int[]
     data::Vector{Vector{T}} = Vector{T}[]
+    base::Union{Vector{T}, Nothing} = nothing
     mask_lb::Union{Vector{Bool}, Nothing} = nothing
     dual_lb::Union{Vector{Vector{T}}, Nothing} = nothing
     mask_ub::Union{Vector{Bool}, Nothing} = nothing
@@ -18,13 +21,27 @@ Base.@kwdef mutable struct NodeEntry{T}
 end
 
 Base.@kwdef mutable struct EdgeEntry{T}
+    locked::Bool = false 
     var::Symbol
     ids::Vector{Tuple{Int, Int, Int}}
+    pos::AbstractVector{Int} = Int[]
     data::Vector{Vector{T}} = Vector{T}[]
+    base::Union{Vector{T}, Nothing} = nothing
     mask_lb::Union{Vector{Bool}, Nothing} = nothing
     dual_lb::Union{Vector{Vector{T}}, Nothing} = nothing
     mask_ub::Union{Vector{Bool}, Nothing} = nothing
     dual_ub::Union{Vector{Vector{T}}, Nothing} = nothing
+end
+
+"Instantiate the database entry of an input variable that is not recorded in the solution"
+function _new_input_entry(model::_PM.AbstractPowerModel, element::Symbol, var::String)
+
+    if in(element, [:branch, :dcline])
+        # EdgeEntry{Float32}(var = Symbol(var), ids = input.ids, locked = true)
+        throw(ArgumentError("Input data of edge element $element is not supported."))
+    else
+        return NodeEntry{Float32}(var = Symbol(var), ids = sort(collect(_PM.ids(model, element))))
+    end
 end
 
 function _init_duals!(fields::Dict{Symbol, <:Any}, value::JuMP.Containers.DenseAxisArray)
@@ -92,15 +109,50 @@ function init_edge_fields(model::_PM.AbstractPowerModel, var::String, name::Stri
     return _init_fields(value, var, ids, record_duals)
 end
 
+"""
+    init_input_entry!(entry::Union{NodeEntry, EdgeEntry}, input::InputData, model::_PM.AbstractPowerModel, element::Symbol)
+
+Initialise the input-side information of the database `entry` of a variable of `element`: the positions of the
+`input` ids within the entry ids (all element ids of `model`) and the values of the components not covered by
+`input`, which default to the model property of the same name, or to zero if it does not exist. The entry is then
+locked. Input takes precedence over solution values recorded under the same name.
+"""
+function init_input_entry!(entry::Union{NodeEntry, EdgeEntry}, input::InputData, model::_PM.AbstractPowerModel, element::Symbol)
+
+    var = String(entry.var)
+    if isnothing(input.ids)
+        # Input covers all components: no default value is needed
+        base, pos = nothing, eachindex(entry.ids)
+    else
+        pos = indexin(input.ids, entry.ids)
+        any(isnothing, pos) && throw(ArgumentError(
+            "Input $element/$var is defined at ids not in the model: $(input.ids[isnothing.(pos)])."
+        ))
+        pos = Vector{Int}(pos)
+        if in(var, get_pm_key(model, element))
+            base = Float32.(vec(get_pm_value(model, element, [var], Array{Any, 2})))
+        else
+            @warn "$element/$var is not a model property: components not covered by the input are set to zero."
+            base = zeros(Float32, length(entry.ids))
+        end
+    end
+    length(input.data) == length(pos) || throw(DimensionMismatch(
+        "Input $element/$var has $(length(input.data)) values for $(length(pos)) ids."
+    ))
+    any(!isnothing, (entry.mask_lb, entry.mask_ub)) && @warn(
+        "Input $element/$var shares its name with a solution variable whose dual values are recorded."
+    )
+    entry.base, entry.pos, entry.locked = base, pos, true
+    return nothing
+end
+
 "Empty the data collection database"
 function empty_database!(db::NamedTuple)
 
     T = first(typeof(first(values(db.bus))).parameters)
 
     for (key, data) in pairs(db) 
-        if key == :check
-            continue
-        elseif key == :info
+        if key == :info
             for field in fieldnames(typeof(data))
                 empty!(getfield(data, field))
             end
@@ -130,8 +182,6 @@ function instantiate_database(model::_PM.AbstractPowerModel, record_duals::Bool)
     vars = [k for (k, v) in _PM.var(model) if !isempty(v)]
     
     db = Dict{Symbol, Any}()
-    # Initialize check to verify if input variables are recorded
-    db[:check] = [false]
     # Initialize data collector with general information
     db[:info] = InfoEntry()
 
@@ -170,27 +220,13 @@ Extract data from output dictionary `results`, saving it to the OPF instance dat
 The `results` dictionary is organized with two main keys:
 - `input` : contains all input data of the OPF simulation that varies across OPF instances
 - `output`: contains the `PowerModels` OPF results dictionary
+
+Input variables are recorded over all ids of the element in `model`. Components not covered by the input take
+the model default (see `init_input_entry!`). If a variable is both in `input` and in the solution, the input
+is recorded for the instances where it exists.
 """
 function extract_data!(db::NamedTuple, results::Dict{String, <:Any}, model::_PM.AbstractPowerModel)
 
-    if !first(db.check)
-        # Initialize database for non-constant input data
-        for (element, value) in results["input"]
-            element = Symbol(element)
-            if in(element, [:branch, :dcline])
-                list = [var => EdgeEntry{Float32}(var = Symbol(var), ids = value[var].ids) for var in keys(value)]
-            else
-                list = [var => NodeEntry{Float32}(var = Symbol(var), ids = value[var].ids) for var in keys(value)]
-            end
-            if haskey(db, element)
-                mergewith!(merge, getfield(db, element), Dict(list...))
-            else
-                @error "It is not possible to add field $element to the database being a NamedTuple."
-            end
-        end
-        setindex!(db.check, true, 1)
-    end
-    
     solved = JuMP.is_solved_and_feasible(model.model)
     if solved
         # Extract global OPF solution information
@@ -203,15 +239,24 @@ function extract_data!(db::NamedTuple, results::Dict{String, <:Any}, model::_PM.
         for field in fieldnames(typeof(db.info))
             push!(getfield(db.info, field), data[field])
         end
-        # Extract not-constant input OPF data that exist for the given model
-        for key in (h for h in keys(db) if haskey(results["input"], string(h)))
-            for (var, value) in db[key]
-                if haskey(results["input"][string(key)], var)
-                    push!(getfield(value, :data), Float32.(results["input"][string(key)][var].data))
+        # Extract not-constant input OPF data, completed over all element ids
+        for (element, vars) in results["input"]
+            key = Symbol(element)
+            haskey(db, key) || throw(ArgumentError("Input element $element is not in the database."))
+            entries = getfield(db, key)
+            for (var, input) in vars
+                entry = get!(() -> _new_input_entry(model, key, var), entries, var)
+                entry.locked || init_input_entry!(entry, input, model, key)
+                if isnothing(entry.base)
+                    push!(entry.data, Float32.(input.data))
+                else
+                    full = copy(entry.base)
+                    full[entry.pos] .= input.data
+                    push!(entry.data, full)
                 end
             end
         end
-        # Extract OPF primal and (if requested) dual solution results
+        # Extract OPF primal and (if requested) dual solution results, unless input takes precedence
         for key in filter(k -> in(string(k), keys(results["solution"])), keys(db))
             for (var, value) in filter(p -> !haskey(get(results["input"], string(key), Dict()), p.first), db[key])
                 push!(getfield(value, :data),
