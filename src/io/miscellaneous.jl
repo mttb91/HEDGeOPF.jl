@@ -204,7 +204,7 @@ function generate_uid(cleanup::Bool)
     end
     df = reduce(vcat, ls)
     # Sort AC-OPF instances based on total load active power and objective value
-    _DF.sort!(df, [:pd_tot, :objective, :topology_id])
+    _DF.sort!(df, [:pd_tot, :objective, :topology_id, :is_strictly_feasible])
     _DF.insertcols!(df, 1, :uid => axes(df, 1))
     # Resort to original order based on worker, case and topology
     _DF.sort!(df, [:worker, :case, :topology_id])

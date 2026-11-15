@@ -94,7 +94,145 @@ end
         @test all(.!isempty.(getfield.(values(db.bus), :ids)))
         @test all(.!isempty.(getfield.(values(db.gen), :ids)))
         @test all(.!isempty.(getfield.(values(db.branch), :ids)))
-    end 
+    end
+
+    @testset "record of primal inputs/outputs for non-strictly feasible OPF instance" begin
+
+        pm = DATA["5_pjm"]["pm"]
+        ids = sort(collect(_PM.ids(pm, :load)))
+        # Loads at their upper bound exceed the total generation capacity, hence require slack activation
+        pmax = vec(get_pm_value(pm, :load, ["pmax"], Array{Any, 2}))
+        slack_vars = ["pd_slack_up", "pd_slack_down", "qd_slack_up", "qd_slack_down"]
+
+        load_values(results, var) = vec(get_pm_value(results["solution"], "load", [var], Array{Any, 2}))
+        # Setpoints are sampled only for the first `n` loads, the others remain at their nominal value
+        function solve_setpoints(pd, n = length(ids))
+            model = deepcopy(pm)
+            sample = Dict("load" => Dict(
+                "pd" => InputData(pd[1:n], ids[1:n]), "qd" => InputData(d.qd[1:n], ids[1:n])
+            ))
+            update_load_power!(model, sample, total_load_active_power_bounds(model))
+            res = _PM.optimize_model!(model)
+            res["input"], res["id"] = sample, 1
+            return model, res
+        end
+        model, res = solve_setpoints(pmax)
+
+        @testset "preparation of unfeasible instance" begin
+
+            results = deepcopy(res)
+            process_unfeasible_instance!(results, model)
+
+            @test results["is_strictly_feasible"] === false
+            @test results["objective"] == res["objective"]
+            @test results["solution"]["load"] == res["solution"]["load"]
+            @test results["input"]["load"]["pd"].data == pmax
+            @test results["input"]["load"]["qd"].data == d.qd
+
+            results = deepcopy(res)
+            delete!(results["input"]["load"], "qd")
+            @test_throws ArgumentError process_unfeasible_instance!(results, model)
+        end
+
+        @testset "preparation of feasible instance" begin
+
+            results = deepcopy(res)
+            process_feasible_instance!(results, model)
+            cost = sum(JuMP.value, values(_PM.var(model, 0, :slack_cost)))
+
+            @test results["is_strictly_feasible"] === true
+            @test isempty(results["input"]["load"])
+            @test all(all(iszero(load[var]) for var in slack_vars) for load in values(results["solution"]["load"]))
+            @test load_values(results, "pd") == load_values(res, "pd")
+            @test cost > 0
+            @test isapprox(results["objective"], res["objective"] - cost)
+            @test isapprox(results["objective"], sum(JuMP.value, values(_PM.var(model, 0, :pg_cost))))
+        end
+
+        @testset "recording of unfeasible and feasible instances" begin
+
+            db = instantiate_database(deepcopy(pm), false)
+            extract_instance!(db, deepcopy(res), model)
+            cost = sum(JuMP.value, values(_PM.var(model, 0, :slack_cost)))
+
+            @test db.info.is_strictly_feasible == [false, true]
+            @test db.info.termination_status == [1, 1]
+            @test isapprox(db.info.pd_tot, [sum(pmax), sum(load_values(res, "pd"))]; atol = 1e-5)
+            @test isapprox(db.info.objective, res["objective"] .- [0, cost])
+            # Unfeasible instance: sampled setpoints and optimal slack; feasible instance: corrected setpoints, no slack
+            @test all(isapprox.(db.load["pd"].data, [Float32.(pmax), Float32.(load_values(res, "pd"))]; atol = 1e-6))
+            @test all(isapprox.(db.load["qd"].data, [Float32.(d.qd), Float32.(load_values(res, "qd"))]; atol = 1e-6))
+            @test any(>(1e-4), db.load["pd_slack_up"].data[1])
+            for var in slack_vars
+                @test db.load[var].data[1] == Float32.(load_values(res, var))
+                @test all(iszero, db.load[var].data[2])
+            end
+            # Everything else is recorded identically in both instances, with the same row order
+            @test all(length(entry.data) == 2 for entry in values(db.load))
+            for element in [:bus, :gen, :branch], entry in values(db[element])
+                @test length(entry.data) == 2
+                @test entry.data[1] == entry.data[2]
+            end
+        end
+
+        @testset "recording of unfeasible instance with loads not sampled" begin
+
+            # The last load is not sampled, its nominal setpoint must still be recorded in the unfeasible instance
+            model, res = solve_setpoints(pmax, length(ids) - 1)
+            db = instantiate_database(deepcopy(pm), false)
+            extract_instance!(db, res, model)
+
+            @test db.info.is_strictly_feasible == [false, true]
+            @test db.load["pd"].data[1] == Float32.([pmax[1:end-1]; d.pd[end]])
+            @test db.load["qd"].data[1] == Float32.(d.qd)
+            @test isapprox(first(db.info.pd_tot), sum(pmax[1:end-1]) + d.pd[end]; atol = 1e-5)
+        end
+
+        @testset "recording of strictly feasible instance" begin
+
+            model, res = solve_setpoints(d.pd)
+            db = instantiate_database(deepcopy(pm), false)
+            extract_instance!(db, res, model)
+
+            @test db.info.is_strictly_feasible == [true]
+            @test isapprox(db.info.pd_tot, [sum(load_values(res, "pd"))]; atol = 1e-5)
+            @test isapprox(first(db.info.objective), 17552.0; atol = 1e0)
+            for var in slack_vars
+                @test all(iszero, first(db.load[var].data))
+            end
+        end
+
+        @testset "no instance recorded if the model is not solved" begin
+
+            model = deepcopy(pm)
+            db = instantiate_database(deepcopy(pm), false)
+            extract_instance!(db, Dict{String, Any}("input" => Dict{String, Any}(), "id" => 1), model)
+
+            @test !JuMP.is_solved_and_feasible(model.model)
+            @test isempty(db.info.pd_tot)
+        end
+
+        @testset "recording of solutions from input samples" begin
+
+            for (pd, is_feasible) in [(pmax, [false, true]), (d.pd, [true])]
+                model = deepcopy(pm)
+                db = instantiate_database(model, false)
+                topology = TopologyPerturbation(id = 1, pd_tot_bounds = total_load_active_power_bounds(model))
+                sample = InputSample(
+                    topology = topology,
+                    pd_tot = topology.pd_tot_bounds,
+                    data = Dict("load" => Dict("pd" => InputData(pd, ids), "qd" => InputData(d.qd, ids)))
+                )
+                out = solve_model!(model, db, sample)
+
+                @test db.info.is_strictly_feasible == is_feasible
+                @test isapprox(first(db.info.pd_tot), sum(pd); atol = 1e-3)
+                # A single solve is counted, with the load total of the feasible instance
+                @test out[[1, 3]] == [1.0, 1.0]
+                @test isapprox(out[2], last(db.info.pd_tot); atol = 1e-3)
+            end
+        end
+    end
 end
 
 @testset "test initialisation of database entries for input data" begin

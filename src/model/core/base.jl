@@ -44,7 +44,7 @@ function solve_model!(pm::_PM.AbstractPowerModel, db::NamedTuple, sample::InputS
     results["input"] = sample.data
     results["id"] = id
     # Extract relevant data to the database
-    extract_data!(db, results, pm)
+    extract_instance!(db, results, pm)
 
     results = nothing
     return [float(id), extract_info(pm)...]

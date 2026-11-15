@@ -374,7 +374,8 @@
                 df = _DF.DataFrame(;
                     pd_tot      = Float64.(worker:2:(worker + 4)),
                     objective   = ones(Float64, 3),
-                    topology_id = ones(Int, 3)
+                    topology_id = ones(Int, 3),
+                    is_strictly_feasible = trues(3)
                 )
                 CSV.write(joinpath(tmp, "info-$(worker).csv"), df)
             end
@@ -390,7 +391,7 @@
                     map = _DF.DataFrame(CSV.File(joinpath(tmp, "map.csv")))
 
                     # Required columns exist
-                    for col in [:uid, :worker, :case, :pd_tot, :objective, :topology_id]
+                    for col in [:uid, :worker, :case, :pd_tot, :objective, :topology_id, :is_strictly_feasible]
                         @test _DF.hasproperty(map, col)
                     end
                     # UIDs are unique and span 1:nrow
@@ -402,15 +403,25 @@
             end
         end
 
-        @testset "uid order matches sort by pd_tot, objective, topology_id" begin
+        @testset "uid order matches sort by pd_tot, objective, topology_id, is_strictly_feasible" begin
             mktempdir() do tmp
                 cd(tmp) do
                     _write_info_csvs(tmp)
+                    # Unfeasible and feasible instances of the same sample share pd_tot, objective and topology
+                    CSV.write(joinpath(tmp, "info-3.csv"), _DF.DataFrame(;
+                        pd_tot      = [2.0, 2.0],
+                        objective   = [1.0, 1.0],
+                        topology_id = [1, 1],
+                        is_strictly_feasible = [true, false]
+                    ))
                     generate_uid(false)
 
                     map = _DF.DataFrame(CSV.File(joinpath(tmp, "map.csv")))
-                    _DF.sort!(map, [:pd_tot, :objective, :topology_id])
+                    _DF.sort!(map, [:pd_tot, :objective, :topology_id, :is_strictly_feasible])
                     @test map.uid == collect(axes(map, 1))
+                    # Unfeasible instance precedes feasible ones among those sharing pd_tot, objective and topology
+                    ties = filter(:pd_tot => ==(2.0), map)
+                    @test ties.is_strictly_feasible[sortperm(ties.uid)] == [false, true, true]
                 end
             end
         end

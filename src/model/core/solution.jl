@@ -5,6 +5,7 @@ Base.@kwdef mutable struct InfoEntry
     pd_tot::Vector{Float64} = Float64[]
     objective::Vector{Float64} = Float64[]
     solve_time::Vector{Float64} = Float64[]
+    is_strictly_feasible::Vector{Bool} = Bool[]
 end
 
 Base.@kwdef mutable struct NodeEntry{T}
@@ -219,7 +220,7 @@ Extract data from output dictionary `results`, saving it to the OPF instance dat
 
 The `results` dictionary is organized with two main keys:
 - `input` : contains all input data of the OPF simulation that varies across OPF instances
-- `output`: contains the `PowerModels` OPF results dictionary
+- `solution`: contains the `PowerModels` OPF solution dictionary
 
 Input variables are recorded over all ids of the element in `model`. Components not covered by the input take
 the model default (see `init_input_entry!`). If a variable is both in `input` and in the solution, the input
@@ -229,16 +230,6 @@ function extract_data!(db::NamedTuple, results::Dict{String, <:Any}, model::_PM.
 
     solved = JuMP.is_solved_and_feasible(model.model)
     if solved
-        # Extract global OPF solution information
-        data = Dict(
-            :topology_id => results["id"],
-            :termination_status => Int(solved),
-            :pd_tot => sum(vec(get_pm_value(results["solution"], "load", ["pd"], Array{Any, 2}))),
-            [Symbol(h) => results[h] for h in ["objective", "solve_time"]]...
-        )
-        for field in fieldnames(typeof(db.info))
-            push!(getfield(db.info, field), data[field])
-        end
         # Extract not-constant input OPF data, completed over all element ids
         for (element, vars) in results["input"]
             key = Symbol(element)
@@ -273,7 +264,121 @@ function extract_data!(db::NamedTuple, results::Dict{String, <:Any}, model::_PM.
                 end
             end
         end
+        # Extract global OPF solution information, with total load active power of the recorded instance
+        data = Dict(
+            :topology_id => results["id"],
+            :termination_status => Int(solved),
+            :pd_tot => sum(Float64, last(db.load["pd"].data)),
+            :is_strictly_feasible => get(results, "is_strictly_feasible", true),
+            [Symbol(h) => results[h] for h in ["objective", "solve_time"]]...
+        )
+        for field in fieldnames(typeof(db.info))
+            push!(getfield(db.info, field), data[field])
+        end
     end
+    return nothing
+end
+
+"""
+    extract_instance!(db::NamedTuple, results::Dict{String, <:Any}, model::_PM.AbstractPowerModel;
+        nw::Int=_PM.nw_id_default
+    )
+
+Extract the AC-OPF instance(s) of a solved `model` from `results`, saving them to the database `db`.
+
+## Notes
+
+If the solution is feasible and requires slack activation (i.e., it is not strictly feasible),
+two instances are saved in order: the unfeasible instance, with the sampled load setpoints and the
+optimal slack, and the feasible one, with the load setpoints corrected for slack and no slack. A
+strictly feasible solution is saved only as feasible instance. All other data is the same
+in the two instances. Entries of `results` are modified in-place, see
+[`process_unfeasible_instance!`](@ref) and [`process_feasible_instance!`](@ref), which have to
+be called in this order.
+"""
+function extract_instance!(
+    db::NamedTuple, results::Dict{String, <:Any}, model::_PM.AbstractPowerModel;
+    nw::Int=_PM.nw_id_default
+)
+    solved = JuMP.is_solved_and_feasible(model.model)
+    if solved && !is_strictly_feasible(model, solved; nw=nw)
+        process_unfeasible_instance!(results, model; nw=nw)
+        extract_data!(db, results, model)
+    end
+    solved && process_feasible_instance!(results, model; nw=nw)
+    extract_data!(db, results, model)
+    return nothing
+end
+
+"""
+    process_unfeasible_instance!(results::Dict{String, <:Any}, model::_PM.AbstractPowerModel;
+        nw::Int=_PM.nw_id_default
+    )
+
+Prepare `results` of a solved AC-OPF instance that is not strictly feasible to be recorded as
+unfeasible instance, defined by:
+- the sampled (i.e., input) load setpoints as active/reactive load power;
+- the optimal nonzero slack activations;
+- the objective value accounting for the cost of slack activations.
+
+## Notes
+
+The sampled load setpoints `pd` and `qd` are required in `results["input"]["load"]`. They
+take precedence over the corrected load power in the solution when recording the instance
+(see [`extract_data!`](@ref)). The slack variables and the objective are left unchanged,
+the only entry set is `results["is_strictly_feasible"]`.
+"""
+function process_unfeasible_instance!(
+    results::Dict{String, <:Any}, model::_PM.AbstractPowerModel;
+    nw::Int=_PM.nw_id_default
+)
+    load = get(results["input"], "load", Dict{String, InputData}())
+    for var in ["pd", "qd"]
+        haskey(load, var) || throw(ArgumentError(
+            "Sampled load setpoint `$var` is missing in the input of the instance."
+        ))
+    end
+    results["is_strictly_feasible"] = false
+    return nothing
+end
+
+"""
+    process_feasible_instance!(results::Dict{String, <:Any}, model::_PM.AbstractPowerModel;
+        nw::Int=_PM.nw_id_default
+    )
+
+Prepare `results` of a solved AC-OPF instance to be recorded as feasible instance, defined by:
+- the load power accounting for the optimal slack activations, as active/reactive load power;
+- load slack variables equal to zero;
+- the objective value without the cost of slack activations.
+
+## Notes
+
+The entries of `results` are modified in-place:
+- `pd` and `qd` are removed from `results["input"]["load"]`, so that the load power in the
+solution (which accounts for slack) is recorded (see [`extract_data!`](@ref));
+- the load slack variables in `results["solution"]["load"]` are set to zero;
+- the slack cost is subtracted from `results["objective"]`;
+- `results["is_strictly_feasible"]` is set.
+
+Unfeasible instances must be extracted before calling this function, since it overwrites the
+sampled load setpoints and the optimal slack activations.
+"""
+function process_feasible_instance!(
+    results::Dict{String, <:Any}, model::_PM.AbstractPowerModel;
+    nw::Int=_PM.nw_id_default
+)
+    load = get(results["input"], "load", Dict{String, InputData}())
+    for var in ["pd", "qd"]
+        delete!(load, var)
+    end
+    for value in values(results["solution"]["load"])
+        for var in ["pd_slack_up", "pd_slack_down", "qd_slack_up", "qd_slack_down"]
+            value[var] = 0.0
+        end
+    end
+    results["objective"] -= sum(JuMP.value, values(_PM.var(model, nw, :slack_cost)))
+    results["is_strictly_feasible"] = true
     return nothing
 end
 

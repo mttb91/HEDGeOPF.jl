@@ -467,7 +467,6 @@ function update_load_power!(pm::_PM.AbstractPowerModel, sample::Dict{String, Dic
         label = Symbol(var * "_fix")
         value = sample[ref][var]
         JuMP.fix.(_PM.var(pm, nw, label)[value.ids], value.data)
-        delete!(sample[ref], var)
     end
     # Update total load active power bounds
     JuMP.set_normalized_rhs.(pm.model[:pd_tot], pd_tot .* [-1, 1])
