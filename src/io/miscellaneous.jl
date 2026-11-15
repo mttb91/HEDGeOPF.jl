@@ -187,6 +187,29 @@ end
 ###############################################################################
 
 """
+    _pair_anchor(is_strictly_feasible, topology_id, file)
+
+Return, for each AC-OPF instance recorded in the info file `file` of a single worker, the row index of the
+unfeasible instance of its unfeasible/feasible pair, or zero if the instance has no pair.
+Pairs are recorded as consecutive rows (unfeasible first), an error is thrown otherwise.
+"""
+function _pair_anchor(is_strictly_feasible::AbstractVector{Bool}, topology_id::AbstractVector{Int}, file::String)
+
+    n = length(is_strictly_feasible)
+    rows = findall(.!is_strictly_feasible)
+    next = rows .+ 1
+    # An unfeasible instance must be followed by a feasible one with the same topology
+    valid = next .<= n
+    valid[valid] .= is_strictly_feasible[next[valid]] .& (topology_id[next[valid]] .== topology_id[rows[valid]])
+    all(valid) || error("Unfeasible instance at rows $(rows[.!valid]) of $file is not followed by its feasible instance.")
+
+    anchor = zeros(Int, n)
+    anchor[rows] .= rows
+    anchor[next] .= rows
+    return anchor
+end
+
+"""
     generate_uid(cleanup::Bool)
 
 Generate unique identifier for AC-OPF instances by sorting them based on
@@ -200,12 +223,17 @@ function generate_uid(cleanup::Bool)
         data = _DF.DataFrame(CSV.File(joinpath(path, file)))
         _DF.insertcols!(data, 1, :worker => parse(Int, file[6:end-4]))
         _DF.insertcols!(data, 2, :case => axes(data, 1))
-        push!(ls, data)    
+        _DF.insertcols!(data, :anchor => _pair_anchor(data.is_strictly_feasible, data.topology_id, file))
+        push!(ls, data)
     end
     df = reduce(vcat, ls)
     # Sort AC-OPF instances based on total load active power and objective value
     _DF.sort!(df, [:pd_tot, :objective, :topology_id, :is_strictly_feasible])
     _DF.insertcols!(df, 1, :uid => axes(df, 1))
+    # Identify unfeasible/feasible pairs by the uid of the unfeasible instance (-1 if unpaired)
+    uid_of = Dict(zip(zip(df.worker, df.case), df.uid))
+    df.pair = get.(Ref(uid_of), tuple.(df.worker, df.anchor), -1)
+    _DF.select!(df, _DF.Not(:anchor))
     # Resort to original order based on worker, case and topology
     _DF.sort!(df, [:worker, :case, :topology_id])
     CSV.write(joinpath(path, "map.csv"), df)

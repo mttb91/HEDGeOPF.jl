@@ -412,7 +412,7 @@
                         pd_tot      = [2.0, 2.0],
                         objective   = [1.0, 1.0],
                         topology_id = [1, 1],
-                        is_strictly_feasible = [true, false]
+                        is_strictly_feasible = [false, true]
                     ))
                     generate_uid(false)
 
@@ -422,6 +422,86 @@
                     # Unfeasible instance precedes feasible ones among those sharing pd_tot, objective and topology
                     ties = filter(:pd_tot => ==(2.0), map)
                     @test ties.is_strictly_feasible[sortperm(ties.uid)] == [false, true, true]
+                end
+            end
+        end
+
+        @testset "pair identifies unfeasible and feasible instances of the same sample" begin
+
+            # Pairs are consecutive rows (unfeasible first), alone or at the end of the file, mixed with unpaired rows
+            write_info(file, flag, pd_tot, topology_id = ones(Int, length(flag))) = CSV.write(file, _DF.DataFrame(;
+                pd_tot = pd_tot, objective = ones(Float64, length(flag)),
+                topology_id = topology_id, is_strictly_feasible = flag
+            ))
+            info_a = ([true, false, true, true, false, true], [1.0, 5.0, 4.0, 2.0, 7.0, 6.0])
+            info_b = ([false, true, true], [3.0, 3.5, 8.0])
+
+            @testset "unpaired instances" begin
+                mktempdir() do tmp
+                    cd(tmp) do
+                        _write_info_csvs(tmp)
+                        generate_uid(false)
+
+                        map = _DF.DataFrame(CSV.File(joinpath(tmp, "map.csv")))
+                        @test all(map.pair .== -1)
+                    end
+                end
+            end
+
+            @testset "paired instances share the uid of the unfeasible instance" begin
+                mktempdir() do tmp
+                    cd(tmp) do
+                        write_info(joinpath(tmp, "info-1.csv"), info_a...)
+                        write_info(joinpath(tmp, "info-2.csv"), info_b...)
+                        generate_uid(false)
+
+                        map = _DF.DataFrame(CSV.File(joinpath(tmp, "map.csv")))
+                        paired = filter(:pair => !=(-1), map)
+
+                        @test sort(paired.pair) == repeat(sort(filter(:is_strictly_feasible => !, map).uid), inner = 2)
+                        @test _DF.nrow(paired) == 6
+                        @test all(map.pair[map.is_strictly_feasible .== false] .== map.uid[map.is_strictly_feasible .== false])
+                        # Unpaired instances
+                        @test sort(filter(:pair => ==(-1), map).pd_tot) == [1.0, 2.0, 8.0]
+                        # Both instances of a pair belong to the same worker, in consecutive cases
+                        for group in _DF.groupby(paired, :pair)
+                            @test _DF.nrow(group) == 2
+                            @test length(unique(group.worker)) == 1
+                            @test diff(sort(group.case)) == [1]
+                        end
+                    end
+                end
+            end
+
+            @testset "pair does not depend on the assignment of instances to workers" begin
+                maps = map([(info_a, info_b), (info_b, info_a)]) do (first_info, second_info)
+                    mktempdir() do tmp
+                        cd(tmp) do
+                            write_info(joinpath(tmp, "info-1.csv"), first_info...)
+                            write_info(joinpath(tmp, "info-2.csv"), second_info...)
+                            generate_uid(false)
+                            df = _DF.DataFrame(CSV.File(joinpath(tmp, "map.csv")))
+                            _DF.sort!(df, :uid)
+                            return df[:, [:uid, :pd_tot, :objective, :topology_id, :is_strictly_feasible, :pair]]
+                        end
+                    end
+                end
+                @test isequal(first(maps), last(maps))
+            end
+
+            @testset "unfeasible instance without feasible instance" begin
+                cases = [
+                    ([true, false], [1.0, 2.0], [1, 1]),
+                    ([false, false, true], [1.0, 2.0, 3.0], [1, 1, 1]),
+                    ([false, true], [1.0, 2.0], [1, 2])
+                ]
+                for (flag, pd_tot, topology_id) in cases
+                    mktempdir() do tmp
+                        cd(tmp) do
+                            write_info(joinpath(tmp, "info-1.csv"), flag, pd_tot, topology_id)
+                            @test_throws ErrorException generate_uid(false)
+                        end
+                    end
                 end
             end
         end
