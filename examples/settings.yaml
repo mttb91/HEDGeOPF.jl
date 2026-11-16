@@ -27,6 +27,7 @@ DATASET:
     num_folds     : 10                          # ::Int64 - Number of cross-validation folds for dataset partitioning
     num_samples   : null                        # ::Union{Int64, Nothing} - Number of samples in the NN-ready dataset (`nothing` means use all)
     num_quantiles : 20                          # ::Int64 - Number of total load active power quantiles for OPF samples binning
+    unfeasible_ratio : 0.0                      # ::Union{Float64, Nothing} - Percentage ratio between unfeasible and feasible instances (0.0 keeps feasible instances only, `null` the natural ratio)
 
 PARALLEL:
     cpu_ratio : 50.0                            # ::Float64 - Percentage of CPU threads to use w.r.t. `Sys.CPU_THREADS` count

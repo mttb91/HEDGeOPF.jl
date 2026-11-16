@@ -21,6 +21,7 @@ DATASET:
     num_folds     : 10                          # ::Int64 - Number of folds for cross-validation
     num_samples   : null                        # ::Int64 - Total number of samples to be split into folds, if `null` all available samples are used
     num_quantiles : 20                          # ::Int64 - Number of quantiles for stratified sampling based on total load
+    unfeasible_ratio : 0.0                      # ::Union{Float64, Nothing} - Percentage ratio between unfeasible and feasible instances (0.0 keeps feasible instances only, `null` the natural ratio)
 
 SAMPLING:
     delta_pd    : 100.0                         # ::Float64 - Percentage variation in load active power around the nominal values

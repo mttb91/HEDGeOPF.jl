@@ -15,13 +15,24 @@
         @test isa(setup, Dict{String, Any})
         @test all(haskey.(Ref(setup), ["CASE", "DATASET", "MODEL", "PARALLEL", "PATH", "SAMPLING", "SOLVER", "TOPOLOGY"]))
         @test all(haskey.(Ref(setup["CASE"]), ["append", "baseseed", "grid", "name", "num_batches", "num_items", "num_samples"]))
-        @test all(haskey.(Ref(setup["DATASET"]), ["cleanup", "name", "num_folds", "num_quantiles", "num_samples"]))
+        @test all(haskey.(Ref(setup["DATASET"]), ["cleanup", "name", "num_folds", "num_quantiles", "num_samples", "unfeasible_ratio"]))
         @test all(haskey.(Ref(setup["MODEL"]), ["duals", "voll"]))
         @test all(haskey.(Ref(setup["PARALLEL"]), ["cpu_ratio"]))
         @test all(haskey.(Ref(setup["PATH"]), ["input", "output"]))
         @test all(haskey.(Ref(setup["SAMPLING"]), ["delta_pd", "delta_qd", "delta_pf", "max_pf", "min_pf"]))
         @test all(haskey.(Ref(setup["SOLVER"]), ["lp", "nlp", "lp_options", "nlp_options"]))
         @test all(haskey.(Ref(setup["TOPOLOGY"]), ["k_min_gen", "k_max_gen", "k_min_branch", "k_max_branch", "num_topo"]))
+    end
+
+    @testset "Unfeasible ratio" begin
+        for value in (nothing, 0.0, 25.0, 100.0)
+            s = deepcopy(setup); s["DATASET"]["unfeasible_ratio"] = value
+            @test check_settings(s) === nothing
+        end
+        for value in (-1.0, 100.5, 20, "20")
+            s = deepcopy(setup); s["DATASET"]["unfeasible_ratio"] = value
+            @test_throws AssertionError check_settings(s)
+        end
     end
 
     @testset "Symmetric and asymmetric load bounds" begin

@@ -86,5 +86,10 @@ function check_settings(settings::Dict{String, <:Any})
             throw(ArgumentError("Option `k_min_$(key)` must be smaller or equal than `k_max_$(key)`"))
         end
     end
+
+    value, key = settings["DATASET"], "unfeasible_ratio"
+    @assert isnothing(value[key]) || (isa(value[key], Float64) && 0.0 <= value[key] <= 100.0) (
+        "Option `$key` must be `null` or a Float64 percentage in [0, 100]."
+    )
     return nothing
 end
